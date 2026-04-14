@@ -17,7 +17,7 @@ import { signOut } from '@/app/login/actions'
 const navItems = [
   { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
   { label: 'Productos',   href: '/productos',   icon: Package },
-  { label: 'Ventas',      href: '/ventas',      icon: ShoppingCart },
+  { label: 'Ventas',      href: '/ventas/nueva', icon: ShoppingCart },
   { label: 'Proveedores', href: '/proveedores', icon: Truck },
   { label: 'Compras',     href: '/compras',     icon: ShoppingBag },
   { label: 'Reportes',    href: '/reportes',    icon: BarChart3 },
@@ -44,9 +44,11 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
       {/* Navegación */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {navItems.map(({ label, href, icon: Icon }) => {
+          // Para ventas, activar en cualquier sub-ruta de /ventas
+          const baseHref = href === '/ventas/nueva' ? '/ventas' : href
           const isActive =
             pathname === href ||
-            (href !== '/dashboard' && pathname.startsWith(href))
+            (baseHref !== '/dashboard' && pathname.startsWith(baseHref))
 
           return (
             <Link
