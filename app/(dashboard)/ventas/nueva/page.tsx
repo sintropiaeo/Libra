@@ -1,14 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import PosCliente from '@/components/pos/pos-cliente'
 import type { ArqueoCaja, VentaTurno } from '@/components/pos/arqueo-tab'
+import type { VentaHoy } from '@/components/pos/pos-cliente'
 
 export const metadata = { title: 'Punto de Venta — Libra' }
 
 export default async function NuevaVentaPage() {
   const supabase = createClient()
 
-  // Fetch productos, config y arqueo abierto en paralelo
-  const [productosRes, configRes, arqueoRes] = await Promise.all([
+  // Inicio del día de hoy en Argentina (UTC-3, sin DST)
+  const hoyLocal    = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  const hoyStartUTC = new Date(`${hoyLocal}T03:00:00.000Z`)
+
+  // Fetch productos, config, arqueo y ventas de hoy en paralelo
+  const [productosRes, configRes, arqueoRes, ventasHoyRes] = await Promise.all([
     supabase
       .from('productos')
       .select(`
@@ -30,6 +35,18 @@ export default async function NuevaVentaPage() {
       .eq('estado', 'abierta')
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('ventas')
+      .select(`
+        id, fecha, total, metodo_pago,
+        venta_items (
+          id, cantidad, precio_unitario, subtotal,
+          productos ( nombre, unidad )
+        )
+      `)
+      .gte('fecha', hoyStartUTC.toISOString())
+      .order('fecha', { ascending: false })
+      .limit(100),
   ])
 
   const arqueoAbierto = (arqueoRes.data ?? null) as ArqueoCaja | null
@@ -67,6 +84,8 @@ export default async function NuevaVentaPage() {
       ventasTurnoInicial={ventasTurnoInicial}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       historialArqueos={(historialRaw as any) ?? []}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ventasHoyInicial={(ventasHoyRes.data as any) ?? [] as VentaHoy[]}
     />
   )
 }
