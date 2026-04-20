@@ -253,7 +253,7 @@ export default function ReportesCliente({ ventas }: { ventas: Venta[] }) {
       })
     )
     // Orden descendente; recharts layout="vertical" pone data[0] arriba
-    return [...map.values()]
+    return Array.from(map.values())
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
   }, [ventasFiltradas])

@@ -518,6 +518,7 @@ function TabNegocio({ negocio, onRefresh }: { negocio: NegocioConfig | null; onR
         <label className="block text-sm font-medium text-slate-700 mb-1">Logo</label>
         <div className="flex items-center gap-3">
           {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={preview}
               alt="Logo"

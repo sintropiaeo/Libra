@@ -55,7 +55,7 @@ export default function VentasChart({ data }: { data: ChartData[] }) {
           }
         />
         <Tooltip
-          formatter={(value: number) => [formatARS(value), 'Total']}
+          formatter={(value) => [formatARS(Number(value)), 'Total']}
           contentStyle={{
             borderRadius: '8px',
             border: '1px solid #e2e8f0',

@@ -87,7 +87,8 @@ async function getDashboardData() {
   const ticketProm  = cantidadMes > 0 ? totalMes / cantidadMes : 0
 
   // Stock bajo (filtramos en JS porque el SDK no compara columnas entre sí)
-  const stockBajo = ((productosRaw || []) as Producto[])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stockBajo = ((productosRaw || []) as any as Producto[])
     .filter((p) => p.stock_actual < p.stock_minimo)
     .sort((a, b) => (a.stock_actual - a.stock_minimo) - (b.stock_actual - b.stock_minimo))
 

@@ -42,6 +42,7 @@ export default async function ProveedorDetallePage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const compras = (comprasRaw as any[]) ?? []
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalCompras = compras.reduce((s: number, c: any) => s + Number(c.total), 0)
 
   return (

@@ -151,7 +151,8 @@ export default function NuevaCompraCliente({
       const item = prev.find((i) => i.producto_id === id)
       if (!item) return prev
       if (item.cantidad <= 1) {
-        const { [id]: _, ...rest } = preciosStr
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _removed, ...rest } = preciosStr
         setPreciosStr(rest)
         return prev.filter((i) => i.producto_id !== id)
       }
@@ -178,7 +179,8 @@ export default function NuevaCompraCliente({
 
   function eliminar(id: string) {
     setCart((prev) => prev.filter((i) => i.producto_id !== id))
-    setPreciosStr((prev) => { const { [id]: _, ...rest } = prev; return rest })
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    setPreciosStr((prev) => { const { [id]: _removed, ...rest } = prev; return rest })
   }
 
   function vaciar() {
