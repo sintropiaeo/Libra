@@ -74,10 +74,11 @@ const ARS = (v: number) =>
 
 interface Props {
   initialProductos: Producto[]
-  categorias: Categoria[]
+  categorias:       Categoria[]
+  puedeEditar?:     boolean
 }
 
-export default function ProductosCliente({ initialProductos, categorias }: Props) {
+export default function ProductosCliente({ initialProductos, categorias, puedeEditar = true }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -183,13 +184,15 @@ export default function ProductosCliente({ initialProductos, categorias }: Props
           <h1 className="text-2xl font-bold text-slate-900">Productos</h1>
           <p className="text-slate-500 text-sm mt-0.5">Gestión de inventario y precios</p>
         </div>
-        <button
-          onClick={abrirNuevo}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Nuevo producto
-        </button>
+        {puedeEditar && (
+          <button
+            onClick={abrirNuevo}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo producto
+          </button>
+        )}
       </div>
 
       {/* Filtros */}
@@ -260,8 +263,8 @@ export default function ProductosCliente({ initialProductos, categorias }: Props
                   return (
                     <tr
                       key={p.id}
-                      onClick={() => abrirEditar(p)}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
+                      onClick={() => puedeEditar && abrirEditar(p)}
+                      className={`transition-colors ${puedeEditar ? 'hover:bg-slate-50 cursor-pointer' : ''}`}
                     >
                       {/* Nombre */}
                       <td className="px-5 py-4 max-w-xs">
@@ -313,16 +316,18 @@ export default function ProductosCliente({ initialProductos, categorias }: Props
 
                       {/* Acciones */}
                       <td className="px-5 py-4">
-                        <button
-                          onClick={(e) => handleToggle(e, p)}
-                          className={`text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-                            p.activo
-                              ? 'text-slate-500 hover:bg-red-50 hover:text-red-600'
-                              : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
-                          }`}
-                        >
-                          {p.activo ? 'Desactivar' : 'Activar'}
-                        </button>
+                        {puedeEditar && (
+                          <button
+                            onClick={(e) => handleToggle(e, p)}
+                            className={`text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
+                              p.activo
+                                ? 'text-slate-500 hover:bg-red-50 hover:text-red-600'
+                                : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
+                            }`}
+                          >
+                            {p.activo ? 'Desactivar' : 'Activar'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )
@@ -333,8 +338,8 @@ export default function ProductosCliente({ initialProductos, categorias }: Props
         )}
       </div>
 
-      {/* Modal */}
-      {modalAbierto && (
+      {/* Modal (solo si puede editar) */}
+      {modalAbierto && puedeEditar && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal() }}

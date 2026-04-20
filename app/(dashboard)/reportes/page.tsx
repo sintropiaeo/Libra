@@ -1,10 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import ReportesCliente from '@/components/reportes/reportes-cliente'
+import type { Perfil } from '@/lib/permisos'
+import { tieneAcceso } from '@/lib/permisos'
 
 export const metadata = { title: 'Reportes — Libra' }
 
 export default async function ReportesPage() {
   const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: perfilData } = await supabase
+    .from('perfiles').select('*').eq('user_id', user.id).single()
+  if (!tieneAcceso(perfilData as Perfil | null, 'reportes')) redirect('/ventas/nueva')
 
   // Traemos el último año de ventas con items y costo de productos
   const fechaDesde = new Date()

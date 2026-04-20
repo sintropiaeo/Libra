@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingCart, Banknote, Smartphone,
-  CreditCard, Clock, Package,
+  CreditCard, Clock, Package, Printer,
 } from 'lucide-react'
 import { crearVenta } from '@/app/(dashboard)/ventas/nueva/actions'
 
@@ -32,10 +32,11 @@ type CartItem = {
 }
 
 type MetodoPago = 'efectivo' | 'transferencia' | 'debito' | 'credito'
+type ActiveTab  = 'productos' | 'servicios'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const METODOS: { value: MetodoPago; label: string; icon: React.ElementType }[] = [
+const TODOS_METODOS: { value: MetodoPago; label: string; icon: React.ElementType }[] = [
   { value: 'efectivo',      label: 'Efectivo',      icon: Banknote   },
   { value: 'transferencia', label: 'Transferencia', icon: Smartphone },
   { value: 'debito',        label: 'Débito',        icon: CreditCard },
@@ -51,21 +52,44 @@ const ARS = (v: number) =>
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export default function PosCliente({ productos }: { productos: Producto[] }) {
+export default function PosCliente({
+  productos,
+  metodosActivos = ['efectivo', 'transferencia', 'debito', 'credito'],
+}: {
+  productos:      Producto[]
+  metodosActivos?: string[]
+}) {
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const [busqueda,     setBusqueda]     = useState('')
-  const [cart,         setCart]         = useState<CartItem[]>([])
-  const [metodoPago,   setMetodoPago]   = useState<MetodoPago>('efectivo')
-  const [procesando,   setProcesando]   = useState(false)
-  const [error,        setError]        = useState<string | null>(null)
-  const [ventaExitosa, setVentaExitosa] = useState<{ ventaId: string; total: number } | null>(null)
+  // ─── Estado ────────────────────────────────────────────────────────────────
+  const [activeTab,     setActiveTab]     = useState<ActiveTab>('productos')
+  const [busqueda,      setBusqueda]      = useState('')
+  const [cart,          setCart]          = useState<CartItem[]>([])
+  const [metodoPago,    setMetodoPago]    = useState<MetodoPago>(
+    (metodosActivos[0] ?? 'efectivo') as MetodoPago
+  )
+  const [procesando,    setProcesando]    = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [ventaExitosa,  setVentaExitosa]  = useState<{ ventaId: string; total: number } | null>(null)
+  // Cantidades individuales por servicio en el tab de servicios
+  const [cantServicio,  setCantServicio]  = useState<Record<string, number>>({})
 
-  // Auto-foco al montar (listo para escanear/tipear de inmediato)
-  useEffect(() => { searchRef.current?.focus() }, [])
+  // Auto-foco en búsqueda cuando está en tab productos
+  useEffect(() => {
+    if (activeTab === 'productos') searchRef.current?.focus()
+  }, [activeTab])
 
-  // ─── Filtrado de productos ────────────────────────────────────────────────
+  // ─── Separar productos de servicios ───────────────────────────────────────
 
+  // Detecta cualquier categoría que empiece con "Servicio" (ej: "Servicios de impresión")
+  const servicios = useMemo(
+    () => productos.filter((p) =>
+      p.categorias?.nombre?.toLowerCase().startsWith('servicio')
+    ),
+    [productos]
+  )
+
+  // En el tab Productos se muestran todos (incluye servicios para búsqueda/scanner)
   const productosFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     if (!q) return productos.slice(0, 40)
@@ -78,35 +102,34 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
       .slice(0, 40)
   }, [productos, busqueda])
 
-  // ─── Carrito ──────────────────────────────────────────────────────────────
+  // ─── Carrito ───────────────────────────────────────────────────────────────
 
-  function agregarAlCarrito(p: Producto) {
+  function agregarAlCarrito(p: Producto, cantidad = 1) {
     setCart((prev) => {
       const existing = prev.find((i) => i.producto_id === p.id)
       if (existing) {
         return prev.map((i) =>
-          i.producto_id === p.id ? { ...i, cantidad: i.cantidad + 1 } : i
+          i.producto_id === p.id ? { ...i, cantidad: i.cantidad + cantidad } : i
         )
       }
       return [
         ...prev,
         {
-          producto_id:    p.id,
-          nombre:         p.nombre,
+          producto_id:     p.id,
+          nombre:          p.nombre,
           precio_unitario: p.precio_venta,
-          unidad:         p.unidad,
-          cantidad:       1,
+          unidad:          p.unidad,
+          cantidad,
         },
       ]
     })
     setBusqueda('')
-    // Re-foco para el próximo escaneo
     setTimeout(() => searchRef.current?.focus(), 0)
   }
 
   function incrementar(id: string) {
     setCart((prev) =>
-      prev.map((i) => i.producto_id === id ? { ...i, cantidad: i.cantidad + 1 } : i)
+      prev.map((i) => (i.producto_id === id ? { ...i, cantidad: i.cantidad + 1 } : i))
     )
   }
 
@@ -115,14 +138,14 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
       const item = prev.find((i) => i.producto_id === id)
       if (!item) return prev
       if (item.cantidad <= 1) return prev.filter((i) => i.producto_id !== id)
-      return prev.map((i) => i.producto_id === id ? { ...i, cantidad: i.cantidad - 1 } : i)
+      return prev.map((i) => (i.producto_id === id ? { ...i, cantidad: i.cantidad - 1 } : i))
     })
   }
 
   function setCantidad(id: string, v: number) {
     if (isNaN(v) || v < 1) return
     setCart((prev) =>
-      prev.map((i) => i.producto_id === id ? { ...i, cantidad: v } : i)
+      prev.map((i) => (i.producto_id === id ? { ...i, cantidad: v } : i))
     )
   }
 
@@ -135,11 +158,8 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
     setError(null)
   }
 
-  // Totales
   const total         = cart.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0)
   const cantidadItems = cart.reduce((s, i) => s + i.cantidad, 0)
-
-  // ─── Teclado: Enter agrega el primer resultado (compatibilidad con lectores de barras) ──
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && productosFiltrados.length > 0) {
@@ -148,7 +168,30 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
     }
   }
 
-  // ─── Cobrar ───────────────────────────────────────────────────────────────
+  // ─── Servicios: cantidad por ítem ──────────────────────────────────────────
+
+  function getCantS(id: string) { return cantServicio[id] ?? 1 }
+
+  function setCantS(id: string, v: number) {
+    if (!isNaN(v) && v >= 1) setCantServicio((prev) => ({ ...prev, [id]: v }))
+  }
+
+  function incS(id: string) {
+    setCantServicio((prev) => ({ ...prev, [id]: (prev[id] ?? 1) + 1 }))
+  }
+
+  function decS(id: string) {
+    setCantServicio((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) - 1) }))
+  }
+
+  function agregarServicio(p: Producto) {
+    const cantidad = getCantS(p.id)
+    agregarAlCarrito(p, cantidad)
+    // Reset cantidad a 1 tras agregar
+    setCantServicio((prev) => ({ ...prev, [p.id]: 1 }))
+  }
+
+  // ─── Cobrar ────────────────────────────────────────────────────────────────
 
   async function handleCobrar() {
     if (cart.length === 0 || procesando) return
@@ -157,8 +200,8 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
 
     const result = await crearVenta({
       items: cart.map((i) => ({
-        producto_id:    i.producto_id,
-        cantidad:       i.cantidad,
+        producto_id:     i.producto_id,
+        cantidad:        i.cantidad,
         precio_unitario: i.precio_unitario,
       })),
       metodo_pago: metodoPago,
@@ -182,7 +225,7 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
     setTimeout(() => searchRef.current?.focus(), 0)
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -205,82 +248,152 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
       {/* Área principal */}
       <div className="flex flex-1 overflow-hidden bg-slate-50">
 
-        {/* ── Panel izquierdo: búsqueda + resultados ── */}
+        {/* ── Panel izquierdo ── */}
         <div className="flex flex-col flex-1 overflow-hidden bg-white border-r border-slate-200">
 
-          {/* Buscador */}
-          <div className="p-4 border-b border-slate-100 bg-white">
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-              <input
-                ref={searchRef}
-                type="text"
-                placeholder="Buscar producto o escanear código de barras... (Enter para agregar)"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="w-full pl-11 pr-4 py-3 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
-              />
-            </div>
-            {busqueda && (
-              <p className="text-xs text-slate-400 mt-2 ml-1">
-                {productosFiltrados.length} resultado{productosFiltrados.length !== 1 && 's'} · Enter para agregar el primero
-              </p>
-            )}
+          {/* ── Tabs ── */}
+          <div className="flex shrink-0 border-b border-slate-200 bg-white">
+            <button
+              onClick={() => setActiveTab('productos')}
+              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'productos'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              Productos
+            </button>
+            <button
+              onClick={() => setActiveTab('servicios')}
+              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'servicios'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Printer className="w-4 h-4" />
+              Servicios
+              {servicios.length > 0 && (
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'servicios'
+                    ? 'bg-blue-100 text-blue-600'
+                    : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {servicios.length}
+                </span>
+              )}
+            </button>
           </div>
 
-          {/* Lista de productos */}
-          <div className="flex-1 overflow-y-auto">
-            {productosFiltrados.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                <Package className="w-10 h-10 text-slate-300 mb-3" />
-                <p className="text-slate-500 text-sm">No se encontraron productos</p>
+          {/* ── Contenido según tab ── */}
+          {activeTab === 'productos' ? (
+            <>
+              {/* Buscador */}
+              <div className="p-4 border-b border-slate-100 bg-white shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    placeholder="Buscar producto o escanear código de barras... (Enter para agregar)"
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    className="w-full pl-11 pr-4 py-3 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
+                  />
+                </div>
+                {busqueda && (
+                  <p className="text-xs text-slate-400 mt-2 ml-1">
+                    {productosFiltrados.length} resultado{productosFiltrados.length !== 1 && 's'} · Enter para agregar el primero
+                  </p>
+                )}
               </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {productosFiltrados.map((p) => (
-                  <li key={p.id}>
-                    <button
-                      onClick={() => agregarAlCarrito(p)}
-                      className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-blue-50 active:bg-blue-100 transition-colors group text-left"
-                    >
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-800 truncate">{p.nombre}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {p.categorias?.nombre ?? '—'} · {p.unidad}
-                          {p.codigo_barras && (
-                            <span className="ml-2 text-slate-300">#{p.codigo_barras}</span>
+
+              {/* Lista de productos */}
+              <div className="flex-1 overflow-y-auto">
+                {productosFiltrados.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                    <Package className="w-10 h-10 text-slate-300 mb-3" />
+                    <p className="text-slate-500 text-sm">No se encontraron productos</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {productosFiltrados.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          onClick={() => agregarAlCarrito(p)}
+                          className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-blue-50 active:bg-blue-100 transition-colors group text-left"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-slate-800 truncate">{p.nombre}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {p.categorias?.nombre ?? '—'} · {p.unidad}
+                              {p.codigo_barras && (
+                                <span className="ml-2 text-slate-300">#{p.codigo_barras}</span>
+                              )}
+                            </p>
+                          </div>
+                          {p.stock_actual <= 0 && (
+                            <span className="shrink-0 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-200">
+                              Sin stock
+                            </span>
                           )}
-                        </p>
-                      </div>
-                      {/* Stock bajo */}
-                      {p.stock_actual <= 0 && (
-                        <span className="shrink-0 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-200">
-                          Sin stock
-                        </span>
-                      )}
-                      {/* Precio */}
-                      <span className="shrink-0 font-bold text-blue-600 text-base">
-                        {ARS(p.precio_venta)}
-                      </span>
-                      {/* + botón (visible en hover) */}
-                      <span className="shrink-0 w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Plus className="w-4 h-4" />
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                          <span className="shrink-0 font-bold text-blue-600 text-base">
+                            {ARS(p.precio_venta)}
+                          </span>
+                          <span className="shrink-0 w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Plus className="w-4 h-4" />
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          ) : (
+            /* ── Tab Servicios ── */
+            <div className="flex-1 overflow-y-auto">
+              {servicios.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                  <Printer className="w-10 h-10 text-slate-300 mb-3" />
+                  <p className="text-slate-500 text-sm font-medium mb-1">
+                    No hay servicios configurados
+                  </p>
+                  <p className="text-xs text-slate-400 mb-4">
+                    Creá productos en la categoría <strong>Servicios</strong> para que aparezcan aquí
+                  </p>
+                  <Link
+                    href="/productos"
+                    className="text-sm text-blue-600 hover:underline font-medium"
+                  >
+                    Ir a Productos →
+                  </Link>
+                </div>
+              ) : (
+                <ul className="p-3 space-y-2">
+                  {servicios.map((p) => (
+                    <ServicioCard
+                      key={p.id}
+                      producto={p}
+                      cantidad={getCantS(p.id)}
+                      onInc={() => incS(p.id)}
+                      onDec={() => decS(p.id)}
+                      onCantidadChange={(v) => setCantS(p.id, v)}
+                      onAgregar={() => agregarServicio(p)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Panel derecho: carrito ── */}
         <div className="w-[420px] shrink-0 flex flex-col bg-white shadow-xl">
 
           {ventaExitosa ? (
-            /* ── Estado: venta exitosa ── */
             <div className="flex flex-col items-center justify-center flex-1 p-8 text-center">
               <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mb-5">
                 <CheckCircle className="w-10 h-10 text-emerald-600" />
@@ -307,7 +420,7 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
             </div>
           ) : (
             <>
-              {/* ── Carrito: header ── */}
+              {/* Header carrito */}
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="w-4 h-4 text-slate-500" />
@@ -329,28 +442,33 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
                 )}
               </div>
 
-              {/* ── Carrito: ítems ── */}
+              {/* Ítems del carrito */}
               <div className="flex-1 overflow-y-auto">
                 {cart.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-6">
                     <ShoppingCart className="w-10 h-10 text-slate-200 mb-3" />
                     <p className="text-sm text-slate-400">
-                      Buscá un producto y presioná <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono text-xs">Enter</kbd><br />
-                      o hacé clic para agregarlo
+                      {activeTab === 'productos' ? (
+                        <>
+                          Buscá un producto y presioná{' '}
+                          <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono text-xs">Enter</kbd>
+                          <br />o hacé clic para agregarlo
+                        </>
+                      ) : (
+                        <>Ingresá la cantidad y presioná<br /><strong>Agregar</strong> en el servicio</>
+                      )}
                     </p>
                   </div>
                 ) : (
                   <ul className="divide-y divide-slate-100 px-4 py-1">
                     {cart.map((item) => (
                       <li key={item.producto_id} className="py-3 flex items-center gap-3">
-                        {/* Nombre + precio unitario */}
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-800 text-sm truncate">{item.nombre}</p>
                           <p className="text-xs text-slate-400 mt-0.5">
                             {ARS(item.precio_unitario)} / {item.unidad}
                           </p>
                         </div>
-                        {/* Controles de cantidad */}
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => decrementar(item.producto_id)}
@@ -362,9 +480,7 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
                             type="number"
                             min={1}
                             value={item.cantidad}
-                            onChange={(e) =>
-                              setCantidad(item.producto_id, parseInt(e.target.value))
-                            }
+                            onChange={(e) => setCantidad(item.producto_id, parseInt(e.target.value))}
                             className="w-11 text-center text-sm font-bold border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
                           <button
@@ -374,11 +490,9 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
-                        {/* Subtotal */}
                         <p className="text-sm font-bold text-slate-800 w-20 text-right shrink-0">
                           {ARS(item.precio_unitario * item.cantidad)}
                         </p>
-                        {/* Quitar */}
                         <button
                           onClick={() => eliminar(item.producto_id)}
                           className="text-slate-300 hover:text-red-500 transition-colors shrink-0"
@@ -391,22 +505,19 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
                 )}
               </div>
 
-              {/* ── Carrito: footer ── */}
+              {/* Footer carrito */}
               <div className="border-t border-slate-200 shrink-0">
-
-                {/* Total */}
                 <div className="px-5 py-4 flex items-center justify-between bg-slate-50 border-b border-slate-200">
                   <span className="text-slate-600 font-medium text-sm">Total</span>
                   <span className="text-2xl font-bold text-slate-900">{ARS(total)}</span>
                 </div>
 
-                {/* Método de pago */}
                 <div className="px-5 py-4 border-b border-slate-200">
                   <p className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-2.5">
                     Método de pago
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    {METODOS.map(({ value, label, icon: Icon }) => (
+                    {TODOS_METODOS.filter(m => metodosActivos.includes(m.value)).map(({ value, label, icon: Icon }) => (
                       <button
                         key={value}
                         onClick={() => setMetodoPago(value)}
@@ -423,7 +534,6 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
                   </div>
                 </div>
 
-                {/* Error */}
                 {error && (
                   <div className="mx-5 mt-3 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2.5 rounded-lg">
                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -431,7 +541,6 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
                   </div>
                 )}
 
-                {/* Botón Cobrar */}
                 <div className="p-4">
                   <button
                     onClick={handleCobrar}
@@ -451,5 +560,79 @@ export default function PosCliente({ productos }: { productos: Producto[] }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── Tarjeta de servicio ──────────────────────────────────────────────────────
+
+function ServicioCard({
+  producto,
+  cantidad,
+  onInc,
+  onDec,
+  onCantidadChange,
+  onAgregar,
+}: {
+  producto: Producto
+  cantidad: number
+  onInc: () => void
+  onDec: () => void
+  onCantidadChange: (v: number) => void
+  onAgregar: () => void
+}) {
+  const subtotal = producto.precio_venta * cantidad
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors">
+
+      {/* Nombre + precio unitario */}
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-slate-800 text-sm leading-tight">{producto.nombre}</p>
+        <p className="text-sm text-blue-600 font-bold mt-0.5">
+          {ARS(producto.precio_venta)}
+          <span className="text-slate-400 font-normal"> / {producto.unidad}</span>
+        </p>
+      </div>
+
+      {/* Controles de cantidad (grandes para velocidad) */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          onClick={onDec}
+          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+        >
+          <Minus className="w-3.5 h-3.5 text-slate-600" />
+        </button>
+        <input
+          type="number"
+          min={1}
+          value={cantidad}
+          onChange={(e) => onCantidadChange(parseInt(e.target.value) || 1)}
+          onKeyDown={(e) => e.key === 'Enter' && onAgregar()}
+          onClick={(e) => (e.target as HTMLInputElement).select()}
+          className="w-16 text-center text-lg font-bold border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        <button
+          onClick={onInc}
+          className="w-8 h-8 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Subtotal preview */}
+      <div className="text-right shrink-0 w-24">
+        <p className="text-xs text-slate-400 leading-none mb-0.5">Total</p>
+        <p className="text-base font-bold text-slate-800">{ARS(subtotal)}</p>
+      </div>
+
+      {/* Botón agregar */}
+      <button
+        onClick={onAgregar}
+        className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-xl transition-colors shrink-0"
+      >
+        <Plus className="w-4 h-4" />
+        Agregar
+      </button>
+    </li>
   )
 }
