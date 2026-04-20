@@ -27,6 +27,7 @@ type Producto = {
   codigo_barras: string | null
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
   activo: boolean
+  permitir_venta_sin_stock: boolean
   categorias: { nombre: string } | null
 }
 
@@ -40,6 +41,7 @@ type FormValues = {
   stock_minimo: string
   codigo_barras: string
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
+  permitir_venta_sin_stock: boolean
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -52,15 +54,16 @@ const UNIDADES = [
 ]
 
 const FORM_VACIO: FormValues = {
-  nombre:        '',
-  descripcion:   '',
-  categoria_id:  '',
-  precio_costo:  '',
-  precio_venta:  '',
-  stock_actual:  '0',
-  stock_minimo:  '5',
-  codigo_barras: '',
-  unidad:        'unidad',
+  nombre:                   '',
+  descripcion:              '',
+  categoria_id:             '',
+  precio_costo:             '',
+  precio_venta:             '',
+  stock_actual:             '0',
+  stock_minimo:             '5',
+  codigo_barras:            '',
+  unidad:                   'unidad',
+  permitir_venta_sin_stock: false,
 }
 
 const ARS = (v: number) =>
@@ -116,15 +119,16 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
   function abrirEditar(p: Producto) {
     setProductoEditando(p)
     setForm({
-      nombre:        p.nombre,
-      descripcion:   p.descripcion   ?? '',
-      categoria_id:  p.categoria_id  ?? '',
-      precio_costo:  String(p.precio_costo),
-      precio_venta:  String(p.precio_venta),
-      stock_actual:  String(p.stock_actual),
-      stock_minimo:  String(p.stock_minimo),
-      codigo_barras: p.codigo_barras ?? '',
-      unidad:        p.unidad,
+      nombre:                   p.nombre,
+      descripcion:              p.descripcion   ?? '',
+      categoria_id:             p.categoria_id  ?? '',
+      precio_costo:             String(p.precio_costo),
+      precio_venta:             String(p.precio_venta),
+      stock_actual:             String(p.stock_actual),
+      stock_minimo:             String(p.stock_minimo),
+      codigo_barras:            p.codigo_barras ?? '',
+      unidad:                   p.unidad,
+      permitir_venta_sin_stock: p.permitir_venta_sin_stock ?? false,
     })
     setError(null)
     setModalAbierto(true)
@@ -144,7 +148,7 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
     setError(null)
 
     const fd = new FormData()
-    Object.entries(form).forEach(([k, v]) => fd.set(k, v))
+    Object.entries(form).forEach(([k, v]) => fd.set(k, String(v)))
 
     const result = productoEditando
       ? await actualizarProducto(productoEditando.id, fd)
@@ -489,6 +493,33 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                     onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
                     className={input}
                   />
+                </div>
+
+                {/* Permitir venta sin stock */}
+                <div
+                  className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-colors cursor-pointer ${
+                    form.permitir_venta_sin_stock
+                      ? 'border-blue-200 bg-blue-50'
+                      : 'border-slate-200 bg-slate-50'
+                  }`}
+                  onClick={() => setForm({ ...form, permitir_venta_sin_stock: !form.permitir_venta_sin_stock })}
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Permitir vender sin stock</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {form.permitir_venta_sin_stock
+                        ? 'Se puede vender aunque el stock sea 0 o negativo'
+                        : 'El producto se bloquea en el POS cuando el stock llega a 0'}
+                    </p>
+                  </div>
+                  {/* Toggle switch */}
+                  <div className={`relative shrink-0 ml-4 w-11 h-6 rounded-full transition-colors ${
+                    form.permitir_venta_sin_stock ? 'bg-blue-500' : 'bg-slate-300'
+                  }`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                      form.permitir_venta_sin_stock ? 'translate-x-5' : 'translate-x-0.5'
+                    }`} />
+                  </div>
                 </div>
 
                 {/* Error */}

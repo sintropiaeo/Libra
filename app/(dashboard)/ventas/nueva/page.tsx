@@ -19,7 +19,7 @@ export default async function NuevaVentaPage() {
       .select(`
         id, nombre, descripcion,
         precio_venta, stock_actual, stock_minimo,
-        codigo_barras, unidad, activo,
+        codigo_barras, unidad, activo, permitir_venta_sin_stock,
         categorias ( nombre )
       `)
       .eq('activo', true)

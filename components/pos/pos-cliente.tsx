@@ -22,6 +22,7 @@ type Producto = {
   stock_minimo: number
   codigo_barras: string | null
   unidad: string
+  permitir_venta_sin_stock: boolean
   categorias: { nombre: string } | null
 }
 
@@ -103,6 +104,8 @@ export default function PosCliente({
   const [ventasTurno,    setVentasTurno]    = useState<VentaTurno[]>(ventasTurnoInicial)
   // Ventas de hoy: para mostrar en el panel izquierdo
   const [ventasHoy,      setVentasHoy]      = useState<VentaHoy[]>(ventasHoyInicial)
+  // Error temporal de stock (se auto-descarta)
+  const [stockError,     setStockError]     = useState<string | null>(null)
 
   const cajaAbierta = arqueoAbierto !== null
 
@@ -133,7 +136,16 @@ export default function PosCliente({
 
   // ─── Carrito ───────────────────────────────────────────────────────────────
 
+  function mostrarStockError(msg: string) {
+    setStockError(msg)
+    setTimeout(() => setStockError(null), 3000)
+  }
+
   function agregarAlCarrito(p: Producto, cantidad = 1) {
+    if (p.stock_actual <= 0 && !p.permitir_venta_sin_stock) {
+      mostrarStockError(`"${p.nombre}" no tiene stock disponible`)
+      return
+    }
     setCart((prev) => {
       const existing = prev.find((i) => i.producto_id === p.id)
       if (existing) {
@@ -321,6 +333,14 @@ export default function PosCliente({
               />
             </div>
 
+            {/* Error de stock */}
+            {stockError && (
+              <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs font-medium rounded-lg">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {stockError}
+              </div>
+            )}
+
             {/* Dropdown de resultados */}
             {busqueda.trim() && (
               <div className="absolute left-4 right-4 top-[calc(100%-4px)] bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-30">
@@ -349,7 +369,13 @@ export default function PosCliente({
                               </p>
                             </div>
                             {p.stock_actual <= 0 && (
-                              <span className="shrink-0 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">Sin stock</span>
+                              <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full border ${
+                                p.permitir_venta_sin_stock
+                                  ? 'text-amber-600 bg-amber-50 border-amber-200'
+                                  : 'text-red-600 bg-red-50 border-red-200'
+                              }`}>
+                                {p.permitir_venta_sin_stock ? 'Sin stock' : 'Bloqueado'}
+                              </span>
                             )}
                             <span className="shrink-0 font-bold text-blue-600 text-sm">{ARS(p.precio_venta)}</span>
                             <span className="shrink-0 w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center">

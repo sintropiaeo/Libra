@@ -17,7 +17,7 @@ export default async function ProductosPage() {
         id, nombre, descripcion,
         categoria_id, precio_costo, precio_venta,
         stock_actual, stock_minimo,
-        codigo_barras, unidad, activo,
+        codigo_barras, unidad, activo, permitir_venta_sin_stock,
         categorias ( nombre )
       `)
       .order('nombre'),
