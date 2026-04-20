@@ -23,12 +23,15 @@ export interface Perfil {
 }
 
 export interface NegocioConfig {
-  id:             string
-  nombre:         string
-  direccion:      string
-  telefono:       string
-  logo_url:       string
-  metodos_pago:   string[]
+  id:                   string
+  nombre:               string
+  direccion:            string
+  telefono:             string
+  logo_url:             string
+  metodos_pago:         string[]
+  imprimir_ticket_auto: boolean
+  tamano_ticket:        '58mm' | '80mm'
+  sonido_escaneo:       boolean
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
@@ -74,18 +74,26 @@ const ARS = (v: number) =>
 
 export default function PosCliente({
   productos,
-  metodosActivos = ['efectivo', 'transferencia', 'debito', 'credito'],
+  metodosActivos     = ['efectivo', 'transferencia', 'debito', 'credito'],
   arqueoAbierto      = null,
   ventasTurnoInicial = [],
   historialArqueos   = [],
   ventasHoyInicial   = [],
+  negocioNombre      = '',
+  imprimirTicketAuto = false,
+  tamanoTicket       = '80mm',
+  sonidoEscaneo      = false,
 }: {
-  productos:           Producto[]
-  metodosActivos?:     string[]
-  arqueoAbierto?:      ArqueoCaja | null
-  ventasTurnoInicial?: VentaTurno[]
-  historialArqueos?:   ArqueoCaja[]
-  ventasHoyInicial?:   VentaHoy[]
+  productos:            Producto[]
+  metodosActivos?:      string[]
+  arqueoAbierto?:       ArqueoCaja | null
+  ventasTurnoInicial?:  VentaTurno[]
+  historialArqueos?:    ArqueoCaja[]
+  ventasHoyInicial?:    VentaHoy[]
+  negocioNombre?:       string
+  imprimirTicketAuto?:  boolean
+  tamanoTicket?:        '58mm' | '80mm'
+  sonidoEscaneo?:       boolean
 }) {
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -108,6 +116,78 @@ export default function PosCliente({
   const [stockError,     setStockError]     = useState<string | null>(null)
 
   const cajaAbierta = arqueoAbierto !== null
+
+  // ─── Scanner de código de barras ──────────────────────────────────────────
+  const lastInputTimeRef = useRef<number>(0)
+  const isScannerRef     = useRef(false)
+
+  function playBeep() {
+    try {
+      const ctx  = new AudioContext()
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 1200
+      osc.type = 'square'
+      gain.gain.setValueAtTime(0.12, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.08)
+    } catch { /* AudioContext no disponible */ }
+  }
+
+  const printTicket = useCallback((data: {
+    numeroVenta: number
+    items:       CartItem[]
+    total:       number
+    metodoPago:  string
+  }) => {
+    const width = tamanoTicket === '58mm' ? '54mm' : '76mm'
+    const fecha = new Date().toLocaleString('es-AR', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+    const numStr = data.numeroVenta ? `#${String(data.numeroVenta).padStart(3, '0')}` : ''
+    const metodoLabel: Record<string, string> = {
+      efectivo: 'Efectivo', transferencia: 'Transferencia', debito: 'Débito', credito: 'Crédito',
+    }
+    const itemsHTML = data.items.map(i => {
+      const sub = i.precio_unitario * i.cantidad
+      return `<div class="row"><span>${i.cantidad}× ${i.nombre}</span><span>$${sub.toLocaleString('es-AR')}</span></div>`
+    }).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
+.c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
+.sep{border:none;border-top:1px dashed #555;margin:4px 0}
+.row{display:flex;justify-content:space-between;gap:4px;padding:1px 0}
+.row span:first-child{flex:1}
+@media print{@page{margin:0;size:${tamanoTicket} auto}}
+</style></head><body>
+<div class="c b big">${negocioNombre || 'Mi Negocio'}</div>
+<hr class="sep">
+<div>${fecha}</div>${numStr ? `<div>Venta <b>${numStr}</b></div>` : ''}
+<hr class="sep">
+${itemsHTML}
+<hr class="sep">
+<div class="row b"><span>TOTAL</span><span>$${data.total.toLocaleString('es-AR')}</span></div>
+<hr class="sep">
+<div>Método: ${metodoLabel[data.metodoPago] ?? data.metodoPago}</div>
+<hr class="sep">
+<div class="c">¡Gracias!</div>
+</body></html>`
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;border:0'
+    document.body.appendChild(iframe)
+    iframe.contentDocument!.open()
+    iframe.contentDocument!.write(html)
+    iframe.contentDocument!.close()
+    iframe.contentWindow!.focus()
+    setTimeout(() => {
+      iframe.contentWindow!.print()
+      setTimeout(() => document.body.removeChild(iframe), 1500)
+    }, 200)
+  }, [tamanoTicket, negocioNombre])
 
   // Auto-foco en búsqueda siempre (el input es persistente)
   useEffect(() => {
@@ -202,10 +282,25 @@ export default function PosCliente({
   const total         = cart.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0)
   const cantidadItems = cart.reduce((s, i) => s + i.cantidad, 0)
 
+  function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const now = Date.now()
+    const gap = now - lastInputTimeRef.current
+    lastInputTimeRef.current = now
+    if (gap > 200)          isScannerRef.current = false  // typing manual → reset
+    else if (gap > 0 && gap < 50) isScannerRef.current = true   // rapid input → scanner
+    setBusqueda(e.target.value)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && productosFiltrados.length > 0) {
       e.preventDefault()
+      if (isScannerRef.current && sonidoEscaneo) playBeep()
+      isScannerRef.current = false
       agregarAlCarrito(productosFiltrados[0])
+    }
+    if (e.key === 'Escape') {
+      setBusqueda('')
+      isScannerRef.current = false
     }
   }
 
@@ -265,6 +360,9 @@ export default function PosCliente({
       })),
     }
     setVentasHoy((prev) => [nuevaVentaHoy, ...prev])
+    if (imprimirTicketAuto) {
+      printTicket({ numeroVenta: result.numeroVenta ?? 0, items: cart, total, metodoPago })
+    }
     setVentaExitosa({ ventaId: result.ventaId!, total })
     setCart([])
     setProcesando(false)
@@ -327,7 +425,7 @@ export default function PosCliente({
                 type="text"
                 placeholder="Buscar producto o código de barras..."
                 value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
+                onChange={handleSearchChange}
                 onKeyDown={handleKeyDown}
                 className="w-full pl-11 pr-4 py-3 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
               />

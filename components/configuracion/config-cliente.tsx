@@ -3,10 +3,11 @@
 import { useState, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Users, Building2, CreditCard, Tag,
+  Users, Building2, CreditCard, Tag, Cpu,
   Plus, Pencil, Trash2, Check, X,
   ChevronDown, ChevronRight, Save,
   ShieldCheck, ShieldOff, UserPlus, Upload,
+  Printer, ScanBarcode, Volume2, VolumeX,
 } from 'lucide-react'
 import type { Perfil, NegocioConfig, PermisosEmpleado } from '@/lib/permisos'
 import { PERMISOS_DEFAULT, TODOS_LOS_METODOS } from '@/lib/permisos'
@@ -19,11 +20,12 @@ import {
   crearCategoria,
   actualizarCategoria,
   eliminarCategoria,
+  guardarDispositivos,
 } from '@/app/(dashboard)/configuracion/actions'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 
-type ConfigTab = 'usuarios' | 'negocio' | 'metodos' | 'categorias'
+type ConfigTab = 'usuarios' | 'negocio' | 'metodos' | 'categorias' | 'dispositivos'
 
 interface Categoria {
   id: string
@@ -57,10 +59,11 @@ export default function ConfigCliente({ empleados: init, negocio: initNegocio, c
   const [tab, setTab] = useState<ConfigTab>('usuarios')
 
   const tabs: { id: ConfigTab; label: string; icon: React.ElementType }[] = [
-    { id: 'usuarios',   label: 'Usuarios',          icon: Users      },
-    { id: 'negocio',    label: 'Datos del negocio',  icon: Building2  },
-    { id: 'metodos',    label: 'Métodos de pago',    icon: CreditCard },
-    { id: 'categorias', label: 'Categorías',         icon: Tag        },
+    { id: 'usuarios',    label: 'Usuarios',          icon: Users      },
+    { id: 'negocio',     label: 'Datos del negocio', icon: Building2  },
+    { id: 'metodos',     label: 'Métodos de pago',   icon: CreditCard },
+    { id: 'categorias',  label: 'Categorías',        icon: Tag        },
+    { id: 'dispositivos',label: 'Dispositivos',      icon: Cpu        },
   ]
 
   return (
@@ -85,10 +88,11 @@ export default function ConfigCliente({ empleados: init, negocio: initNegocio, c
         ))}
       </div>
 
-      {tab === 'usuarios'   && <TabUsuarios   empleados={init}          adminId={adminId} onRefresh={() => router.refresh()} />}
-      {tab === 'negocio'    && <TabNegocio    negocio={initNegocio}                       onRefresh={() => router.refresh()} />}
-      {tab === 'metodos'    && <TabMetodos    negocio={initNegocio}                       onRefresh={() => router.refresh()} />}
-      {tab === 'categorias' && <TabCategorias categorias={initCats}                       onRefresh={() => router.refresh()} />}
+      {tab === 'usuarios'    && <TabUsuarios    empleados={init}          adminId={adminId} onRefresh={() => router.refresh()} />}
+      {tab === 'negocio'     && <TabNegocio     negocio={initNegocio}                       onRefresh={() => router.refresh()} />}
+      {tab === 'metodos'     && <TabMetodos     negocio={initNegocio}                       onRefresh={() => router.refresh()} />}
+      {tab === 'categorias'  && <TabCategorias  categorias={initCats}                       onRefresh={() => router.refresh()} />}
+      {tab === 'dispositivos'&& <TabDispositivos negocio={initNegocio}                      onRefresh={() => router.refresh()} />}
     </div>
   )
 }
@@ -644,6 +648,207 @@ function TabMetodos({ negocio, onRefresh }: { negocio: NegocioConfig | null; onR
         <Save className="w-4 h-4" />
         {isPending ? 'Guardando…' : 'Guardar cambios'}
       </button>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// TAB: DISPOSITIVOS
+// ══════════════════════════════════════════════════════════════════════════
+
+function printTestTicket(negocioNombre: string, tamano: string) {
+  const width   = tamano === '58mm' ? '54mm' : '76mm'
+  const fecha   = new Date().toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
+.c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
+.sep{border:none;border-top:1px dashed #555;margin:4px 0}
+.row{display:flex;justify-content:space-between;padding:1px 0}
+@media print{@page{margin:0;size:${tamano} auto}}
+</style></head><body>
+<div class="c b big">${negocioNombre || 'Mi Negocio'}</div>
+<hr class="sep">
+<div>${fecha}</div>
+<div>Venta <b>#001</b> — TICKET DE PRUEBA</div>
+<hr class="sep">
+<div class="row"><span>1× Lapicera azul</span><span>$500</span></div>
+<div class="row"><span>2× Cuaderno A4</span><span>$2.400</span></div>
+<div class="row"><span>1× Resma A4</span><span>$4.800</span></div>
+<hr class="sep">
+<div class="row b"><span>TOTAL</span><span>$7.700</span></div>
+<hr class="sep">
+<div>Método: Efectivo</div>
+<hr class="sep">
+<div class="c">¡Gracias por su compra!</div>
+</body></html>`
+
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;border:0'
+  document.body.appendChild(iframe)
+  iframe.contentDocument!.open()
+  iframe.contentDocument!.write(html)
+  iframe.contentDocument!.close()
+  iframe.contentWindow!.focus()
+  setTimeout(() => {
+    iframe.contentWindow!.print()
+    setTimeout(() => document.body.removeChild(iframe), 1500)
+  }, 200)
+}
+
+function TabDispositivos({ negocio, onRefresh }: { negocio: NegocioConfig | null; onRefresh: () => void }) {
+  const [imprimirAuto,  setImprimirAuto]  = useState(negocio?.imprimir_ticket_auto ?? false)
+  const [tamano,        setTamano]        = useState<'58mm' | '80mm'>(negocio?.tamano_ticket ?? '80mm')
+  const [sonidoEscaneo, setSonidoEscaneo] = useState(negocio?.sonido_escaneo ?? false)
+  const [isPending,     startTransition]  = useTransition()
+  const [msg,           setMsg]           = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  function save() {
+    startTransition(async () => {
+      const res = await guardarDispositivos({
+        imprimir_ticket_auto: imprimirAuto,
+        tamano_ticket:        tamano,
+        sonido_escaneo:       sonidoEscaneo,
+      })
+      if (res.error) { setMsg({ type: 'err', text: res.error }); return }
+      setMsg({ type: 'ok', text: 'Configuración guardada' })
+      onRefresh()
+    })
+  }
+
+  return (
+    <div className="max-w-xl space-y-6">
+      {msg && (
+        <div className={`text-sm px-4 py-2.5 rounded-lg flex items-center justify-between ${
+          msg.type === 'ok'
+            ? 'bg-green-50 border border-green-200 text-green-700'
+            : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          {msg.text}
+          <button type="button" onClick={() => setMsg(null)}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {/* ── Impresora ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+          <Printer className="w-4 h-4 text-slate-500" />
+          <h2 className="text-sm font-semibold text-slate-700">Impresora de tickets</h2>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700 leading-relaxed">
+          Para conectar una impresora de tickets, debe estar instalada en tu computadora como impresora normal (desde Windows/Mac).
+          La app usa la <strong>impresora predeterminada del sistema</strong>. Configurá la impresora de tickets como predeterminada
+          antes de usar esta función.
+        </div>
+
+        {/* Toggle: imprimir automáticamente */}
+        <DispositivoToggle
+          label="Imprimir ticket automáticamente al cobrar"
+          descripcion="Cada vez que se registre una venta, se enviará el ticket a la impresora"
+          checked={imprimirAuto}
+          onChange={setImprimirAuto}
+          icon={<Printer className="w-4 h-4" />}
+        />
+
+        {/* Tamaño del ticket */}
+        <div className="flex items-center justify-between px-4 py-3.5 bg-white border border-slate-200 rounded-xl">
+          <div>
+            <p className="text-sm font-medium text-slate-800">Tamaño del ticket</p>
+            <p className="text-xs text-slate-500 mt-0.5">Ancho del papel de la impresora térmica</p>
+          </div>
+          <div className="flex gap-2 shrink-0 ml-4">
+            {(['58mm', '80mm'] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTamano(t)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                  tamano === t
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Botón imprimir prueba */}
+        <button
+          type="button"
+          onClick={() => printTestTicket(negocio?.nombre ?? 'Mi Negocio', tamano)}
+          className="flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          <Printer className="w-4 h-4" />
+          Imprimir ticket de prueba
+        </button>
+      </section>
+
+      {/* ── Lector de código de barras ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+          <ScanBarcode className="w-4 h-4 text-slate-500" />
+          <h2 className="text-sm font-semibold text-slate-700">Lector de código de barras</h2>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed">
+          Los lectores USB funcionan como un teclado. Solo conectá el lector por USB a tu computadora y escaneá.
+          El código aparece automáticamente en el buscador del Punto de Venta, y si coincide con un producto
+          lo agrega al carrito instantáneamente.
+        </div>
+
+        {/* Toggle: sonido al escanear */}
+        <DispositivoToggle
+          label="Sonido al escanear producto"
+          descripcion="Emite un beep cuando el escáner detecta y agrega un producto al carrito"
+          checked={sonidoEscaneo}
+          onChange={setSonidoEscaneo}
+          icon={sonidoEscaneo ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+        />
+      </section>
+
+      <button
+        onClick={save}
+        disabled={isPending}
+        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+      >
+        <Save className="w-4 h-4" />
+        {isPending ? 'Guardando…' : 'Guardar configuración'}
+      </button>
+    </div>
+  )
+}
+
+function DispositivoToggle({ label, descripcion, checked, onChange, icon }: {
+  label:       string
+  descripcion: string
+  checked:     boolean
+  onChange:    (v: boolean) => void
+  icon:        React.ReactNode
+}) {
+  return (
+    <div
+      onClick={() => onChange(!checked)}
+      className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-colors cursor-pointer ${
+        checked ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'
+      }`}
+    >
+      <div className="flex items-start gap-3 min-w-0">
+        <span className={`mt-0.5 shrink-0 ${checked ? 'text-blue-500' : 'text-slate-400'}`}>{icon}</span>
+        <div>
+          <p className="text-sm font-medium text-slate-800">{label}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{descripcion}</p>
+        </div>
+      </div>
+      <div className={`relative shrink-0 ml-4 w-11 h-6 rounded-full transition-colors ${
+        checked ? 'bg-blue-500' : 'bg-slate-300'
+      }`}>
+        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-0.5'
+        }`} />
+      </div>
     </div>
   )
 }

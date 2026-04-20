@@ -247,3 +247,28 @@ export async function eliminarCategoria(id: string): Promise<{ error?: string }>
   revalidatePath('/productos')
   return {}
 }
+
+export async function guardarDispositivos(payload: {
+  imprimir_ticket_auto: boolean
+  tamano_ticket:        string
+  sonido_escaneo:       boolean
+}): Promise<{ error?: string }> {
+  const adminId = await verificarAdmin()
+  if (!adminId) return { error: 'Sin permisos' }
+
+  const supabase = createAdminClient()
+  const { data: existing } = await supabase
+    .from('negocio_config')
+    .select('id')
+    .limit(1)
+    .maybeSingle()
+
+  const { error } = existing
+    ? await supabase.from('negocio_config').update(payload).eq('id', existing.id)
+    : await supabase.from('negocio_config').insert(payload)
+
+  if (error) return { error: error.message }
+  revalidatePath('/configuracion')
+  revalidatePath('/ventas/nueva')
+  return {}
+}

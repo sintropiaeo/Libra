@@ -26,7 +26,7 @@ export default async function NuevaVentaPage() {
       .order('nombre'),
     supabase
       .from('negocio_config')
-      .select('metodos_pago')
+      .select('nombre, metodos_pago, imprimir_ticket_auto, tamano_ticket, sonido_escaneo')
       .limit(1)
       .single(),
     supabase
@@ -52,6 +52,10 @@ export default async function NuevaVentaPage() {
   const arqueoAbierto = (arqueoRes.data ?? null) as ArqueoCaja | null
   const metodosActivos: string[] =
     configRes.data?.metodos_pago ?? ['efectivo', 'transferencia', 'debito', 'credito']
+  const negocioNombre:      string          = configRes.data?.nombre               ?? ''
+  const imprimirTicketAuto: boolean         = configRes.data?.imprimir_ticket_auto ?? false
+  const tamanoTicket:       '58mm' | '80mm' = (configRes.data?.tamano_ticket as '58mm' | '80mm') ?? '80mm'
+  const sonidoEscaneo:      boolean         = configRes.data?.sonido_escaneo       ?? false
 
   // Ventas del turno actual (desde la apertura de caja)
   let ventasTurnoInicial: VentaTurno[] = []
@@ -86,6 +90,10 @@ export default async function NuevaVentaPage() {
       historialArqueos={(historialRaw as any) ?? []}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ventasHoyInicial={(ventasHoyRes.data as any) ?? [] as VentaHoy[]}
+      negocioNombre={negocioNombre}
+      imprimirTicketAuto={imprimirTicketAuto}
+      tamanoTicket={tamanoTicket}
+      sonidoEscaneo={sonidoEscaneo}
     />
   )
 }
