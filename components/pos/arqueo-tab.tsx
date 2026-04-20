@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   LockOpen, Lock, X, AlertTriangle,
   TrendingUp, TrendingDown, CheckCircle2,
-  Clock, Banknote, CreditCard, ChevronDown, ChevronRight,
+  Banknote, CreditCard, Smartphone, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { abrirCaja, cerrarCaja } from '@/app/(dashboard)/ventas/arqueo/actions'
 
@@ -31,9 +31,10 @@ export interface VentaTurno {
 }
 
 interface Props {
-  arqueoAbierto: ArqueoCaja | null
-  ventasTurno:   VentaTurno[]
-  historial:     ArqueoCaja[]
+  arqueoAbierto:  ArqueoCaja | null
+  ventasTurno:    VentaTurno[]
+  historial:      ArqueoCaja[]
+  metodosActivos: string[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -58,9 +59,22 @@ function formatFecha(iso: string) {
   })
 }
 
+type MetodoCfg = { label: string; icon: React.ElementType; iconColor: string; valueColor: string }
+
+const METODO_CFG: Record<string, MetodoCfg> = {
+  efectivo:      { label: 'Efectivo',        icon: Banknote,   iconColor: 'text-emerald-500', valueColor: 'text-emerald-700' },
+  transferencia: { label: 'Transferencia',   icon: Smartphone, iconColor: 'text-blue-400',    valueColor: 'text-blue-700'    },
+  debito:        { label: 'Tarjeta débito',  icon: CreditCard, iconColor: 'text-purple-400',  valueColor: 'text-purple-700'  },
+  credito:       { label: 'Tarjeta crédito', icon: CreditCard, iconColor: 'text-orange-400',  valueColor: 'text-orange-700'  },
+}
+
+function getCfg(metodo: string): MetodoCfg {
+  return METODO_CFG[metodo] ?? { label: metodo, icon: Banknote, iconColor: 'text-slate-400', valueColor: 'text-slate-700' }
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function ArqueoTab({ arqueoAbierto, ventasTurno, historial }: Props) {
+export default function ArqueoTab({ arqueoAbierto, ventasTurno, historial, metodosActivos }: Props) {
   const router = useRouter()
 
   return (
@@ -69,12 +83,12 @@ export default function ArqueoTab({ arqueoAbierto, ventasTurno, historial }: Pro
         ? <CajaAbierta
             arqueo={arqueoAbierto}
             ventasTurno={ventasTurno}
+            metodosActivos={metodosActivos}
             onRefresh={() => router.refresh()}
           />
         : <CajaCerrada onRefresh={() => router.refresh()} />
       }
 
-      {/* Historial de arqueos cerrados */}
       {historial.length > 0 && (
         <HistorialArqueos historial={historial} />
       )}
@@ -85,15 +99,14 @@ export default function ArqueoTab({ arqueoAbierto, ventasTurno, historial }: Pro
 // ─── Caja cerrada: form para abrir ───────────────────────────────────────────
 
 function CajaCerrada({ onRefresh }: { onRefresh: () => void }) {
-  const [monto, setMonto]             = useState('')
-  const [isPending, startTransition]  = useTransition()
-  const [error, setError]             = useState<string | null>(null)
+  const [monto, setMonto]            = useState('')
+  const [isPending, startTransition] = useTransition()
+  const [error, setError]            = useState<string | null>(null)
 
   function handleAbrir(e: React.FormEvent) {
     e.preventDefault()
     const valor = parseFloat(monto.replace(',', '.'))
     if (isNaN(valor) || valor < 0) { setError('Ingresá un monto válido'); return }
-
     startTransition(async () => {
       const res = await abrirCaja(valor)
       if (res.error) { setError(res.error); return }
@@ -103,7 +116,6 @@ function CajaCerrada({ onRefresh }: { onRefresh: () => void }) {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-      {/* Estado: cerrada */}
       <div className="flex items-center gap-3 px-5 py-4 bg-slate-50 border-b border-slate-200">
         <div className="w-9 h-9 bg-slate-200 rounded-full flex items-center justify-center shrink-0">
           <Lock className="w-4 h-4 text-slate-500" />
@@ -114,7 +126,6 @@ function CajaCerrada({ onRefresh }: { onRefresh: () => void }) {
         </div>
       </div>
 
-      {/* Form apertura */}
       <form onSubmit={handleAbrir} className="px-5 py-4 space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -163,76 +174,72 @@ function CajaCerrada({ onRefresh }: { onRefresh: () => void }) {
 function CajaAbierta({
   arqueo,
   ventasTurno,
+  metodosActivos,
   onRefresh,
 }: {
-  arqueo:      ArqueoCaja
-  ventasTurno: VentaTurno[]
-  onRefresh:   () => void
+  arqueo:         ArqueoCaja
+  ventasTurno:    VentaTurno[]
+  metodosActivos: string[]
+  onRefresh:      () => void
 }) {
-  const [showCierre, setShowCierre]   = useState(false)
+  const [showCierre, setShowCierre] = useState(false)
 
-  // Calcular totales del turno
-  const totalEfectivo    = ventasTurno
-    .filter(v => v.metodo_pago === 'efectivo')
-    .reduce((s, v) => s + v.total, 0)
+  const totalPorMetodo = (m: string) =>
+    ventasTurno.filter(v => v.metodo_pago === m).reduce((s, v) => s + v.total, 0)
 
-  const totalOtros       = ventasTurno
-    .filter(v => v.metodo_pago !== 'efectivo')
-    .reduce((s, v) => s + v.total, 0)
-
-  const montoEsperado    = arqueo.monto_inicial + totalEfectivo
+  const totalVentas   = ventasTurno.reduce((s, v) => s + v.total, 0)
+  const montoEsperado = arqueo.monto_inicial + totalVentas
 
   return (
     <>
       <div className="bg-white rounded-2xl border border-emerald-200 overflow-hidden">
-        {/* Header: caja abierta */}
+        {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 bg-emerald-50 border-b border-emerald-200">
           <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center shrink-0">
             <LockOpen className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="flex-1 min-w-0">
+          <div>
             <p className="text-sm font-semibold text-emerald-800">Caja abierta</p>
             <p className="text-xs text-emerald-600">
-              Abierta a las {formatHora(arqueo.fecha_apertura)} por {arqueo.usuario_nombre}
+              Abierta a las {formatHora(arqueo.fecha_apertura)} · {arqueo.usuario_nombre}
             </p>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Clock className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="text-xs text-emerald-600 font-medium">
-              {formatHora(arqueo.fecha_apertura)}
-            </span>
           </div>
         </div>
 
         {/* Resumen financiero */}
         <div className="px-5 py-4 space-y-3">
+          {/* Monto inicial */}
           <ResumenRow
             label="Monto inicial"
             valor={arqueo.monto_inicial}
             icon={<Banknote className="w-4 h-4 text-slate-400" />}
           />
-          <ResumenRow
-            label="Ventas en efectivo"
-            valor={totalEfectivo}
-            icon={<Banknote className="w-4 h-4 text-blue-400" />}
-            highlight="blue"
-          />
-          <ResumenRow
-            label="Ventas en tarjeta / transferencia"
-            valor={totalOtros}
-            icon={<CreditCard className="w-4 h-4 text-purple-400" />}
-            highlight="purple"
-          />
+
+          {/* Una fila por cada método activo */}
+          {metodosActivos.map(metodo => {
+            const cfg = getCfg(metodo)
+            const Icon = cfg.icon
+            return (
+              <ResumenRow
+                key={metodo}
+                label={`Ventas ${cfg.label}`}
+                valor={totalPorMetodo(metodo)}
+                icon={<Icon className={`w-4 h-4 ${cfg.iconColor}`} />}
+                valueColor={cfg.valueColor}
+              />
+            )
+          })}
+
           <div className="border-t border-slate-100 pt-3">
             <ResumenRow
-              label="Monto esperado en caja"
+              label="Total en caja esperado"
               valor={montoEsperado}
               icon={<Banknote className="w-4 h-4 text-emerald-500" />}
-              highlight="emerald"
+              valueColor="text-emerald-700"
               bold
             />
             <p className="text-xs text-slate-400 mt-1 ml-6">
-              Monto inicial + ventas en efectivo
+              Monto inicial + todas las ventas del turno
             </p>
           </div>
 
@@ -255,11 +262,12 @@ function CajaAbierta({
         </div>
       </div>
 
-      {/* Modal de cierre */}
       {showCierre && (
         <ModalCierre
           arqueo={arqueo}
-          montoEsperado={montoEsperado}
+          ventasTurno={ventasTurno}
+          metodosActivos={metodosActivos}
+          montoEsperadoTotal={montoEsperado}
           onClose={() => setShowCierre(false)}
           onCerrado={onRefresh}
         />
@@ -269,68 +277,90 @@ function CajaAbierta({
 }
 
 function ResumenRow({
-  label, valor, icon, highlight, bold,
+  label, valor, icon, valueColor, bold,
 }: {
-  label:      string
-  valor:      number
-  icon:       React.ReactNode
-  highlight?: 'blue' | 'purple' | 'emerald'
-  bold?:      boolean
+  label:       string
+  valor:       number
+  icon:        React.ReactNode
+  valueColor?: string
+  bold?:       boolean
 }) {
-  const colorMap = {
-    blue:    'text-blue-700',
-    purple:  'text-purple-700',
-    emerald: 'text-emerald-700',
-  }
-  const color = highlight ? colorMap[highlight] : 'text-slate-700'
-
   return (
     <div className="flex items-center gap-2.5">
       <span className="shrink-0">{icon}</span>
       <span className={`flex-1 text-sm text-slate-600 ${bold ? 'font-semibold' : ''}`}>{label}</span>
-      <span className={`text-sm font-bold ${color} ${bold ? 'text-base' : ''}`}>{ARS(valor)}</span>
+      <span className={`text-sm font-bold ${valueColor ?? 'text-slate-700'} ${bold ? 'text-base' : ''}`}>
+        {ARS(valor)}
+      </span>
     </div>
   )
 }
 
 // ─── Modal de cierre de caja ──────────────────────────────────────────────────
 
+type DiffBadge = { texto: string; color: string; icon: React.ReactNode }
+
+function makeDiffBadge(diferencia: number | null): DiffBadge | null {
+  if (diferencia === null) return null
+  if (Math.abs(diferencia) < 1)
+    return { texto: 'Cuadrado', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', icon: <CheckCircle2 className="w-3.5 h-3.5" /> }
+  if (diferencia > 0)
+    return { texto: `+${ARS(diferencia)} sobrante`, color: 'text-blue-600 bg-blue-50 border-blue-200', icon: <TrendingUp className="w-3.5 h-3.5" /> }
+  return { texto: `−${ARS(Math.abs(diferencia))} faltante`, color: 'text-red-600 bg-red-50 border-red-200', icon: <TrendingDown className="w-3.5 h-3.5" /> }
+}
+
 function ModalCierre({
   arqueo,
-  montoEsperado,
+  ventasTurno,
+  metodosActivos,
+  montoEsperadoTotal,
   onClose,
   onCerrado,
 }: {
-  arqueo:        ArqueoCaja
-  montoEsperado: number
-  onClose:       () => void
-  onCerrado:     () => void
+  arqueo:              ArqueoCaja
+  ventasTurno:         VentaTurno[]
+  metodosActivos:      string[]
+  montoEsperadoTotal:  number
+  onClose:             () => void
+  onCerrado:           () => void
 }) {
-  const [montoReal, setMontoReal]       = useState('')
-  const [observaciones, setObs]         = useState('')
-  const [isPending, startTransition]    = useTransition()
-  const [error, setError]               = useState<string | null>(null)
+  const [montosContados, setMontosContados] = useState<Record<string, string>>({})
+  const [observaciones, setObs]             = useState('')
+  const [isPending, startTransition]        = useTransition()
+  const [error, setError]                   = useState<string | null>(null)
 
-  const valorReal  = parseFloat(montoReal.replace(',', '.'))
-  const valido     = !isNaN(valorReal) && valorReal >= 0
-  const diferencia = valido ? valorReal - montoEsperado : null
-
-  function diffLabel() {
-    if (diferencia === null) return null
-    if (Math.abs(diferencia) < 1) return { texto: 'Caja cuadrada', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', icon: <CheckCircle2 className="w-4 h-4" /> }
-    if (diferencia > 0)           return { texto: `Sobrante de ${ARS(diferencia)}`, color: 'text-blue-600 bg-blue-50 border-blue-200', icon: <TrendingUp className="w-4 h-4" /> }
-    return { texto: `Faltante de ${ARS(Math.abs(diferencia))}`, color: 'text-red-600 bg-red-50 border-red-200', icon: <TrendingDown className="w-4 h-4" /> }
+  // Monto esperado por método:
+  // - efectivo: monto_inicial + ventas_efectivo
+  // - otros:    solo ventas de ese método
+  function esperadoPorMetodo(metodo: string): number {
+    const ventas = ventasTurno
+      .filter(v => v.metodo_pago === metodo)
+      .reduce((s, v) => s + v.total, 0)
+    return metodo === 'efectivo' ? arqueo.monto_inicial + ventas : ventas
   }
 
-  const diff = diffLabel()
+  function realPorMetodo(metodo: string): number | null {
+    const raw = montosContados[metodo]
+    if (raw === undefined || raw === '') return null
+    const v = parseFloat(raw.replace(',', '.'))
+    return isNaN(v) ? null : v
+  }
+
+  const todosCompletos = metodosActivos.every(m => realPorMetodo(m) !== null)
+
+  const totalReal = todosCompletos
+    ? metodosActivos.reduce((s, m) => s + (realPorMetodo(m) ?? 0), 0)
+    : null
+
+  const diferenciaTotal = totalReal !== null ? totalReal - montoEsperadoTotal : null
 
   function handleCerrar() {
-    if (!valido) { setError('Ingresá el monto contado'); return }
+    if (!todosCompletos) { setError('Completá los montos de todos los medios de cobro'); return }
     startTransition(async () => {
       const res = await cerrarCaja({
         arqueoId:           arqueo.id,
-        montoFinalReal:     valorReal,
-        montoFinalEsperado: montoEsperado,
+        montoFinalReal:     totalReal!,
+        montoFinalEsperado: montoEsperadoTotal,
         observaciones,
       })
       if (res.error) { setError(res.error); return }
@@ -340,46 +370,102 @@ function ModalCierre({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
           <h2 className="text-base font-semibold text-slate-800">Cerrar caja</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-4">
-          {/* Monto esperado */}
-          <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
-            <span className="text-sm text-slate-600">Monto esperado</span>
-            <span className="text-base font-bold text-slate-800">{ARS(montoEsperado)}</span>
+        {/* Body scrollable */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+
+          {/* Resumen del turno */}
+          <div className="bg-slate-50 rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-slate-600">
+              {ventasTurno.length} venta{ventasTurno.length !== 1 ? 's' : ''} · Total vendido
+            </span>
+            <span className="font-bold text-slate-800">
+              {ARS(ventasTurno.reduce((s, v) => s + v.total, 0))}
+            </span>
           </div>
 
-          {/* Efectivo contado */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Efectivo contado en caja
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">$</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0"
-                value={montoReal}
-                onChange={e => setMontoReal(e.target.value)}
-                className="w-full pl-7 pr-4 py-3 text-lg font-bold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
-                autoFocus
-              />
-            </div>
+          {/* Un bloque por método */}
+          <div className="space-y-4">
+            {metodosActivos.map(metodo => {
+              const cfg      = getCfg(metodo)
+              const Icon     = cfg.icon
+              const esperado = esperadoPorMetodo(metodo)
+              const real     = realPorMetodo(metodo)
+              const dif      = real !== null ? real - esperado : null
+              const badge    = makeDiffBadge(dif)
+
+              return (
+                <div key={metodo} className="border border-slate-200 rounded-xl p-4 space-y-3">
+                  {/* Label + esperado */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon className={`w-4 h-4 ${cfg.iconColor}`} />
+                      <span className="text-sm font-semibold text-slate-800">{cfg.label}</span>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      Esperado: <span className="font-bold text-slate-700">{ARS(esperado)}</span>
+                    </span>
+                  </div>
+
+                  {/* Input de conteo */}
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      value={montosContados[metodo] ?? ''}
+                      onChange={e => setMontosContados(prev => ({ ...prev, [metodo]: e.target.value }))}
+                      className="w-full pl-7 pr-4 py-2.5 text-base font-bold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                    />
+                  </div>
+
+                  {/* Diferencia en tiempo real */}
+                  {badge && (
+                    <div className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold ${badge.color}`}>
+                      {badge.icon}
+                      {badge.texto}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
-          {/* Diferencia en tiempo real */}
-          {diff && (
-            <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border font-semibold text-sm ${diff.color}`}>
-              {diff.icon}
-              {diff.texto}
+          {/* Resumen total (cuando todos completos) */}
+          {todosCompletos && totalReal !== null && (
+            <div className="bg-slate-50 rounded-xl px-4 py-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Total esperado</span>
+                <span className="font-bold text-slate-800">{ARS(montoEsperadoTotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Total contado</span>
+                <span className="font-bold text-slate-800">{ARS(totalReal)}</span>
+              </div>
+              {(() => {
+                const b = makeDiffBadge(diferenciaTotal)
+                return b ? (
+                  <div className={`flex items-center gap-2 mt-2 px-3 py-2.5 rounded-xl border font-semibold text-sm ${b.color}`}>
+                    {b.icon}
+                    {Math.abs(diferenciaTotal!) < 1
+                      ? 'Caja cuadrada'
+                      : diferenciaTotal! > 0
+                        ? `Sobrante total de ${ARS(diferenciaTotal!)}`
+                        : `Faltante total de ${ARS(Math.abs(diferenciaTotal!))}`
+                    }
+                  </div>
+                ) : null
+              })()}
             </div>
           )}
 
@@ -405,7 +491,8 @@ function ModalCierre({
           )}
         </div>
 
-        <div className="flex gap-3 px-6 pb-5">
+        {/* Footer */}
+        <div className="flex gap-3 px-6 pb-5 pt-3 shrink-0 border-t border-slate-100">
           <button
             onClick={onClose}
             className="flex-1 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50"
@@ -414,7 +501,7 @@ function ModalCierre({
           </button>
           <button
             onClick={handleCerrar}
-            disabled={isPending || !valido}
+            disabled={isPending || !todosCompletos}
             className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
           >
             {isPending ? 'Cerrando…' : 'Confirmar cierre'}
@@ -437,9 +524,9 @@ function HistorialArqueos({ historial }: { historial: ArqueoCaja[] }) {
       </div>
       <ul className="divide-y divide-slate-100">
         {historial.map(a => {
-          const diff = a.diferencia ?? 0
-          const esPos = diff > 0.5
-          const esNeg = diff < -0.5
+          const diff   = a.diferencia ?? 0
+          const esPos  = diff > 0.5
+          const esNeg  = diff < -0.5
           const isOpen = expandido === a.id
 
           return (
@@ -449,15 +536,11 @@ function HistorialArqueos({ historial }: { historial: ArqueoCaja[] }) {
                 className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors text-left"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800">
-                    {formatFecha(a.fecha_apertura)}
-                  </p>
+                  <p className="text-sm font-medium text-slate-800">{formatFecha(a.fecha_apertura)}</p>
                   <p className="text-xs text-slate-400">{a.usuario_nombre}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-slate-800">
-                    {ARS(a.monto_final_real ?? 0)}
-                  </p>
+                  <p className="text-sm font-bold text-slate-800">{ARS(a.monto_final_real ?? 0)}</p>
                   {a.diferencia !== null && (
                     <p className={`text-xs font-semibold ${
                       esNeg ? 'text-red-500' : esPos ? 'text-blue-500' : 'text-emerald-500'
@@ -472,7 +555,6 @@ function HistorialArqueos({ historial }: { historial: ArqueoCaja[] }) {
                 }
               </button>
 
-              {/* Detalle expandido */}
               {isOpen && (
                 <div className="px-5 pb-3 pt-1 bg-slate-50 text-xs space-y-1.5 text-slate-600">
                   <div className="flex justify-between">

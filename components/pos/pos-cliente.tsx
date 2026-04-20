@@ -396,6 +396,7 @@ export default function PosCliente({
               arqueoAbierto={arqueoAbierto}
               ventasTurno={ventasTurno}
               historial={historialArqueos}
+              metodosActivos={metodosActivos}
             />
           )}
         </div>
