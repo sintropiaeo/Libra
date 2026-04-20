@@ -34,7 +34,7 @@ export default async function VentaDetallePage({
   const { data: venta } = await supabase
     .from('ventas')
     .select(`
-      id, fecha, total, metodo_pago, notas, created_at,
+      id, numero_venta, fecha, total, metodo_pago, notas, created_at,
       venta_items (
         id, cantidad, precio_unitario, subtotal,
         productos ( nombre, unidad, codigo_barras )
@@ -71,7 +71,9 @@ export default async function VentaDetallePage({
         <div className="flex items-start justify-between mb-4">
           <div>
             <p className="text-xs text-slate-400 font-mono mb-1">
-              #{venta.id.slice(-8).toUpperCase()}
+              {venta.numero_venta
+                ? `#${String(venta.numero_venta).padStart(3, '0')}`
+                : `#${venta.id.slice(-8).toUpperCase()}`}
             </p>
             <h1 className="text-xl font-bold text-slate-900">Detalle de venta</h1>
           </div>

@@ -30,8 +30,8 @@ export default async function VentasPage() {
 
   const { data: ventas } = await supabase
     .from('ventas')
-    .select('id, fecha, total, metodo_pago, notas')
-    .order('fecha', { ascending: false })
+    .select('id, numero_venta, fecha, total, metodo_pago, notas')
+    .order('numero_venta', { ascending: false })
     .limit(300)
 
   // Stats del día
@@ -109,6 +109,7 @@ export default async function VentasPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
+                  <th className="px-5 py-3.5 w-20">#</th>
                   <th className="px-5 py-3.5">Fecha y hora</th>
                   <th className="px-5 py-3.5">Método</th>
                   <th className="px-5 py-3.5">Notas</th>
@@ -119,6 +120,11 @@ export default async function VentasPage() {
               <tbody className="divide-y divide-slate-100">
                 {ventas.map((v) => (
                   <tr key={v.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-5 py-3.5">
+                      <span className="font-mono font-bold text-slate-500 text-sm">
+                        {v.numero_venta ? `#${String(v.numero_venta).padStart(3, '0')}` : '—'}
+                      </span>
+                    </td>
                     <td className="px-5 py-3.5 text-slate-600">
                       {new Date(v.fecha).toLocaleString('es-AR', {
                         day:    '2-digit',

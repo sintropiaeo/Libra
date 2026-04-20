@@ -43,6 +43,7 @@ type VentaItemHoy = {
 
 export type VentaHoy = {
   id: string
+  numero_venta: number
   fecha: string
   total: number
   metodo_pago: string
@@ -238,10 +239,11 @@ export default function PosCliente({
     // Actualizar ventas del turno y del día en tiempo real
     setVentasTurno((prev) => [...prev, { total, metodo_pago: metodoPago }])
     const nuevaVentaHoy: VentaHoy = {
-      id:           result.ventaId!,
-      fecha:        new Date().toISOString(),
+      id:            result.ventaId!,
+      numero_venta:  result.numeroVenta ?? 0,
+      fecha:         new Date().toISOString(),
       total,
-      metodo_pago:  metodoPago,
+      metodo_pago:   metodoPago,
       venta_items:  cart.map(item => ({
         id:              `${item.producto_id}-${Date.now()}`,
         cantidad:        item.cantidad,
@@ -685,6 +687,7 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
           const isOpen    = expandida === v.id
           const itemCount = v.venta_items.reduce((s, i) => s + i.cantidad, 0)
           const hora      = new Date(v.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+          const numStr    = v.numero_venta ? `#${String(v.numero_venta).padStart(3, '0')}` : null
 
           return (
             <li key={v.id}>
@@ -694,6 +697,9 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
+                    {numStr && (
+                      <span className="text-xs font-mono font-bold text-slate-400">{numStr}</span>
+                    )}
                     <span className="text-sm font-bold text-slate-900">{ARS(v.total)}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${METODO_BADGE[v.metodo_pago] ?? 'bg-slate-100 text-slate-600'}`}>
                       {METODO_LABEL[v.metodo_pago] ?? v.metodo_pago}
@@ -720,7 +726,7 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
                       <span className="font-semibold shrink-0">{ARS(item.subtotal ?? item.precio_unitario * item.cantidad)}</span>
                     </div>
                   ))}
-                  <p className="text-xs text-slate-400 font-mono pt-1">#{v.id.slice(-8).toUpperCase()}</p>
+                  {numStr && <p className="text-xs text-slate-400 font-mono pt-1">{numStr}</p>}
                 </div>
               )}
             </li>

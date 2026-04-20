@@ -15,7 +15,7 @@ export async function crearVenta(payload: {
   items: ItemVenta[]
   metodo_pago: MetodoPago
   notas?: string
-}): Promise<{ error?: string; ventaId?: string }> {
+}): Promise<{ error?: string; ventaId?: string; numeroVenta?: number }> {
   const supabase = createClient()
 
   if (!payload.items.length) {
@@ -36,7 +36,7 @@ export async function crearVenta(payload: {
       metodo_pago: payload.metodo_pago,
       notas: payload.notas?.trim() || null,
     })
-    .select('id')
+    .select('id, numero_venta')
     .single()
 
   if (ventaError || !venta) {
@@ -62,5 +62,5 @@ export async function crearVenta(payload: {
 
   revalidatePath('/ventas')
   revalidatePath('/dashboard')
-  return { ventaId: venta.id }
+  return { ventaId: venta.id, numeroVenta: venta.numero_venta }
 }

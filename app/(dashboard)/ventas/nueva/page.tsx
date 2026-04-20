@@ -38,7 +38,7 @@ export default async function NuevaVentaPage() {
     supabase
       .from('ventas')
       .select(`
-        id, fecha, total, metodo_pago,
+        id, numero_venta, fecha, total, metodo_pago,
         venta_items (
           id, cantidad, precio_unitario, subtotal,
           productos ( nombre, unidad )
