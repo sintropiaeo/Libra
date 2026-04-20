@@ -5,9 +5,10 @@ import Link from 'next/link'
 import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingCart, Banknote, Smartphone,
-  CreditCard, Clock, Package, Printer,
+  CreditCard, Clock, Package, Printer, Calculator,
 } from 'lucide-react'
 import { crearVenta } from '@/app/(dashboard)/ventas/nueva/actions'
+import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ type CartItem = {
 }
 
 type MetodoPago = 'efectivo' | 'transferencia' | 'debito' | 'credito'
-type ActiveTab  = 'productos' | 'servicios'
+type ActiveTab  = 'productos' | 'servicios' | 'arqueo'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -55,24 +56,33 @@ const ARS = (v: number) =>
 export default function PosCliente({
   productos,
   metodosActivos = ['efectivo', 'transferencia', 'debito', 'credito'],
+  arqueoAbierto   = null,
+  ventasTurnoInicial = [],
+  historialArqueos   = [],
 }: {
-  productos:      Producto[]
-  metodosActivos?: string[]
+  productos:           Producto[]
+  metodosActivos?:     string[]
+  arqueoAbierto?:      ArqueoCaja | null
+  ventasTurnoInicial?: VentaTurno[]
+  historialArqueos?:   ArqueoCaja[]
 }) {
   const searchRef = useRef<HTMLInputElement>(null)
 
   // ─── Estado ────────────────────────────────────────────────────────────────
-  const [activeTab,     setActiveTab]     = useState<ActiveTab>('productos')
-  const [busqueda,      setBusqueda]      = useState('')
-  const [cart,          setCart]          = useState<CartItem[]>([])
-  const [metodoPago,    setMetodoPago]    = useState<MetodoPago>(
+  const [activeTab,      setActiveTab]      = useState<ActiveTab>('productos')
+  const [busqueda,       setBusqueda]       = useState('')
+  const [cart,           setCart]           = useState<CartItem[]>([])
+  const [metodoPago,     setMetodoPago]     = useState<MetodoPago>(
     (metodosActivos[0] ?? 'efectivo') as MetodoPago
   )
-  const [procesando,    setProcesando]    = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-  const [ventaExitosa,  setVentaExitosa]  = useState<{ ventaId: string; total: number } | null>(null)
-  // Cantidades individuales por servicio en el tab de servicios
-  const [cantServicio,  setCantServicio]  = useState<Record<string, number>>({})
+  const [procesando,     setProcesando]     = useState(false)
+  const [error,          setError]          = useState<string | null>(null)
+  const [ventaExitosa,   setVentaExitosa]   = useState<{ ventaId: string; total: number } | null>(null)
+  const [cantServicio,   setCantServicio]   = useState<Record<string, number>>({})
+  // Ventas del turno: arranca con las del servidor, se actualiza en tiempo real con cada cobro
+  const [ventasTurno,    setVentasTurno]    = useState<VentaTurno[]>(ventasTurnoInicial)
+
+  const cajaAbierta = arqueoAbierto !== null
 
   // Auto-foco en búsqueda cuando está en tab productos
   useEffect(() => {
@@ -80,8 +90,6 @@ export default function PosCliente({
   }, [activeTab])
 
   // ─── Separar productos de servicios ───────────────────────────────────────
-
-  // Detecta cualquier categoría que empiece con "Servicio" (ej: "Servicios de impresión")
   const servicios = useMemo(
     () => productos.filter((p) =>
       p.categorias?.nombre?.toLowerCase().startsWith('servicio')
@@ -89,7 +97,6 @@ export default function PosCliente({
     [productos]
   )
 
-  // En el tab Productos se muestran todos (incluye servicios para búsqueda/scanner)
   const productosFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     if (!q) return productos.slice(0, 40)
@@ -168,26 +175,20 @@ export default function PosCliente({
     }
   }
 
-  // ─── Servicios: cantidad por ítem ──────────────────────────────────────────
+  // ─── Servicios ─────────────────────────────────────────────────────────────
 
   function getCantS(id: string) { return cantServicio[id] ?? 1 }
-
   function setCantS(id: string, v: number) {
     if (!isNaN(v) && v >= 1) setCantServicio((prev) => ({ ...prev, [id]: v }))
   }
-
   function incS(id: string) {
     setCantServicio((prev) => ({ ...prev, [id]: (prev[id] ?? 1) + 1 }))
   }
-
   function decS(id: string) {
     setCantServicio((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) - 1) }))
   }
-
   function agregarServicio(p: Producto) {
-    const cantidad = getCantS(p.id)
-    agregarAlCarrito(p, cantidad)
-    // Reset cantidad a 1 tras agregar
+    agregarAlCarrito(p, getCantS(p.id))
     setCantServicio((prev) => ({ ...prev, [p.id]: 1 }))
   }
 
@@ -213,6 +214,8 @@ export default function PosCliente({
       return
     }
 
+    // Actualizar ventas del turno en tiempo real
+    setVentasTurno((prev) => [...prev, { total, metodo_pago: metodoPago }])
     setVentaExitosa({ ventaId: result.ventaId!, total })
     setCart([])
     setProcesando(false)
@@ -227,6 +230,13 @@ export default function PosCliente({
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
+  const tabClass = (tab: ActiveTab) =>
+    `flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+      activeTab === tab
+        ? 'border-blue-600 text-blue-600'
+        : 'border-transparent text-slate-500 hover:text-slate-700'
+    }`
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
 
@@ -235,6 +245,14 @@ export default function PosCliente({
         <div className="flex items-center gap-2.5">
           <ShoppingCart className="w-5 h-5 text-blue-600" />
           <h1 className="font-bold text-slate-900">Punto de Venta</h1>
+          {/* Indicador de caja */}
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+            cajaAbierta
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-red-100 text-red-600'
+          }`}>
+            {cajaAbierta ? 'Caja abierta' : 'Caja cerrada'}
+          </span>
         </div>
         <Link
           href="/ventas"
@@ -251,45 +269,35 @@ export default function PosCliente({
         {/* ── Panel izquierdo ── */}
         <div className="flex flex-col flex-1 overflow-hidden bg-white border-r border-slate-200">
 
-          {/* ── Tabs ── */}
+          {/* Tabs */}
           <div className="flex shrink-0 border-b border-slate-200 bg-white">
-            <button
-              onClick={() => setActiveTab('productos')}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'productos'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
+            <button onClick={() => setActiveTab('productos')} className={tabClass('productos')}>
               <Package className="w-4 h-4" />
               Productos
             </button>
-            <button
-              onClick={() => setActiveTab('servicios')}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'servicios'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
+            <button onClick={() => setActiveTab('servicios')} className={tabClass('servicios')}>
               <Printer className="w-4 h-4" />
               Servicios
               {servicios.length > 0 && (
                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-                  activeTab === 'servicios'
-                    ? 'bg-blue-100 text-blue-600'
-                    : 'bg-slate-100 text-slate-500'
+                  activeTab === 'servicios' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {servicios.length}
                 </span>
               )}
             </button>
+            <button onClick={() => setActiveTab('arqueo')} className={tabClass('arqueo')}>
+              <Calculator className="w-4 h-4" />
+              Arqueo
+              {!cajaAbierta && (
+                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+              )}
+            </button>
           </div>
 
-          {/* ── Contenido según tab ── */}
-          {activeTab === 'productos' ? (
+          {/* Contenido según tab */}
+          {activeTab === 'productos' && (
             <>
-              {/* Buscador */}
               <div className="p-4 border-b border-slate-100 bg-white shrink-0">
                 <div className="relative">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
@@ -309,8 +317,6 @@ export default function PosCliente({
                   </p>
                 )}
               </div>
-
-              {/* Lista de productos */}
               <div className="flex-1 overflow-y-auto">
                 {productosFiltrados.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-8">
@@ -352,22 +358,18 @@ export default function PosCliente({
                 )}
               </div>
             </>
-          ) : (
-            /* ── Tab Servicios ── */
+          )}
+
+          {activeTab === 'servicios' && (
             <div className="flex-1 overflow-y-auto">
               {servicios.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <Printer className="w-10 h-10 text-slate-300 mb-3" />
-                  <p className="text-slate-500 text-sm font-medium mb-1">
-                    No hay servicios configurados
-                  </p>
+                  <p className="text-slate-500 text-sm font-medium mb-1">No hay servicios configurados</p>
                   <p className="text-xs text-slate-400 mb-4">
-                    Creá productos en la categoría <strong>Servicios</strong> para que aparezcan aquí
+                    Creá productos en la categoría <strong>Servicios</strong> para que aparezcan acá
                   </p>
-                  <Link
-                    href="/productos"
-                    className="text-sm text-blue-600 hover:underline font-medium"
-                  >
+                  <Link href="/productos" className="text-sm text-blue-600 hover:underline font-medium">
                     Ir a Productos →
                   </Link>
                 </div>
@@ -387,6 +389,14 @@ export default function PosCliente({
                 </ul>
               )}
             </div>
+          )}
+
+          {activeTab === 'arqueo' && (
+            <ArqueoTab
+              arqueoAbierto={arqueoAbierto}
+              ventasTurno={ventasTurno}
+              historial={historialArqueos}
+            />
           )}
         </div>
 
@@ -454,8 +464,10 @@ export default function PosCliente({
                           <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono text-xs">Enter</kbd>
                           <br />o hacé clic para agregarlo
                         </>
-                      ) : (
+                      ) : activeTab === 'servicios' ? (
                         <>Ingresá la cantidad y presioná<br /><strong>Agregar</strong> en el servicio</>
+                      ) : (
+                        <>Abrí la caja para empezar<br />a registrar ventas</>
                       )}
                     </p>
                   </div>
@@ -534,6 +546,22 @@ export default function PosCliente({
                   </div>
                 </div>
 
+                {/* Aviso de caja cerrada */}
+                {!cajaAbierta && (
+                  <div className="mx-4 mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-3 rounded-xl">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                    <div>
+                      <p className="font-semibold">Debe abrir caja para poder vender</p>
+                      <button
+                        onClick={() => setActiveTab('arqueo')}
+                        className="mt-1 text-amber-700 underline underline-offset-2 font-medium"
+                      >
+                        Ir a Arqueo de Caja →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {error && (
                   <div className="mx-5 mt-3 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2.5 rounded-lg">
                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -544,10 +572,12 @@ export default function PosCliente({
                 <div className="p-4">
                   <button
                     onClick={handleCobrar}
-                    disabled={cart.length === 0 || procesando}
+                    disabled={cart.length === 0 || procesando || !cajaAbierta}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xl py-5 rounded-2xl transition-colors shadow-sm"
                   >
-                    {procesando
+                    {!cajaAbierta
+                      ? 'Abrí la caja primero'
+                      : procesando
                       ? 'Procesando...'
                       : cart.length === 0
                       ? 'Carrito vacío'
@@ -566,26 +596,19 @@ export default function PosCliente({
 // ─── Tarjeta de servicio ──────────────────────────────────────────────────────
 
 function ServicioCard({
-  producto,
-  cantidad,
-  onInc,
-  onDec,
-  onCantidadChange,
-  onAgregar,
+  producto, cantidad, onInc, onDec, onCantidadChange, onAgregar,
 }: {
-  producto: Producto
-  cantidad: number
-  onInc: () => void
-  onDec: () => void
+  producto:         Producto
+  cantidad:         number
+  onInc:            () => void
+  onDec:            () => void
   onCantidadChange: (v: number) => void
-  onAgregar: () => void
+  onAgregar:        () => void
 }) {
   const subtotal = producto.precio_venta * cantidad
 
   return (
     <li className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors">
-
-      {/* Nombre + precio unitario */}
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-slate-800 text-sm leading-tight">{producto.nombre}</p>
         <p className="text-sm text-blue-600 font-bold mt-0.5">
@@ -593,8 +616,6 @@ function ServicioCard({
           <span className="text-slate-400 font-normal"> / {producto.unidad}</span>
         </p>
       </div>
-
-      {/* Controles de cantidad (grandes para velocidad) */}
       <div className="flex items-center gap-1.5 shrink-0">
         <button
           onClick={onDec}
@@ -618,14 +639,10 @@ function ServicioCard({
           <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
-
-      {/* Subtotal preview */}
       <div className="text-right shrink-0 w-24">
         <p className="text-xs text-slate-400 leading-none mb-0.5">Total</p>
         <p className="text-base font-bold text-slate-800">{ARS(subtotal)}</p>
       </div>
-
-      {/* Botón agregar */}
       <button
         onClick={onAgregar}
         className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-xl transition-colors shrink-0"
