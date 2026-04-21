@@ -107,9 +107,21 @@ export async function importarLoteProductos(
     for (const c of cats ?? []) categoriaMap[c.nombre] = c.id
   }
 
-  // Detectar duplicados por código de barras
-  const codigosEnBatch = batch
-    .map((p) => p.codigo_barras)
+  // Deduplicar el propio lote por código de barras (keep last occurrence)
+  const batchDedup: ProductoImport[] = []
+  const seenInBatch = new Set<string>()
+  for (let i = batch.length - 1; i >= 0; i--) {
+    const key = batch[i].codigo_barras?.trim() || null
+    if (key) {
+      if (seenInBatch.has(key)) continue
+      seenInBatch.add(key)
+    }
+    batchDedup.unshift(batch[i])
+  }
+
+  // Detectar duplicados por código de barras contra la DB
+  const codigosEnBatch = batchDedup
+    .map((p) => p.codigo_barras?.trim())
     .filter((c): c is string => !!c)
 
   const existingMap: Record<string, string> = {}  // codigo_barras → id
@@ -130,7 +142,7 @@ export async function importarLoteProductos(
   const toInsert: object[] = []
   const toUpdate: { id: string; data: object }[] = []
 
-  for (const p of batch) {
+  for (const p of batchDedup) {
     const row = {
       nombre:                   p.nombre.trim(),
       descripcion:              p.descripcion?.trim()   || null,
