@@ -31,15 +31,20 @@ export async function crearCompra(payload: {
   )
 
   // 1. Crear la compra
+  const insertData: Record<string, unknown> = {
+    proveedor_id: payload.proveedor_id || null,
+    total,
+    notas:        payload.notas?.trim() || null,
+  }
+  // Solo incluir columnas de archivo si existen en el payload (requieren migración SQL)
+  if (payload.archivo_path) {
+    insertData.archivo_path   = payload.archivo_path
+    insertData.archivo_nombre = payload.archivo_nombre || null
+  }
+
   const { data: compra, error: compraError } = await supabase
     .from('compras_proveedor')
-    .insert({
-      proveedor_id:   payload.proveedor_id || null,
-      total,
-      notas:          payload.notas?.trim() || null,
-      archivo_path:   payload.archivo_path   || null,
-      archivo_nombre: payload.archivo_nombre || null,
-    })
+    .insert(insertData)
     .select('id')
     .single()
 
