@@ -1,173 +1,120 @@
 import { createClient } from '@/lib/supabase/server'
-import VentasChart from '@/components/dashboard/ventas-chart'
-import { TrendingUp, Package, AlertTriangle, ShoppingCart } from 'lucide-react'
+import { redirect } from 'next/navigation'
+import { tieneAcceso } from '@/lib/permisos'
+import type { Perfil } from '@/lib/permisos'
+import { ShoppingCart, AlertTriangle, Package, Lock, Unlock } from 'lucide-react'
 
 export const metadata = { title: 'Dashboard — Libra' }
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
-type Venta = {
-  id: string
-  fecha: string
-  total: number
-  metodo_pago: 'efectivo' | 'transferencia' | 'debito' | 'credito'
-}
-
-type Producto = {
-  id: string
-  nombre: string
-  stock_actual: number
-  stock_minimo: number
-  unidad: string
-  categorias: { nombre: string } | null
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const ARS = (value: number) =>
+const ARS = (v: number) =>
   new Intl.NumberFormat('es-AR', {
     style: 'currency',
     currency: 'ARS',
     maximumFractionDigits: 0,
-  }).format(value)
+  }).format(v)
 
-const metodoLabel: Record<string, string> = {
-  efectivo: 'Efectivo',
-  transferencia: 'Transferencia',
-  debito: 'Débito',
-  credito: 'Crédito',
-}
-
-const metodoBadge: Record<string, string> = {
-  efectivo: 'bg-emerald-100 text-emerald-700',
-  transferencia: 'bg-blue-100 text-blue-700',
-  debito: 'bg-violet-100 text-violet-700',
-  credito: 'bg-amber-100 text-amber-700',
-}
-
-// ─── Fetch de datos ───────────────────────────────────────────────────────────
-
-async function getDashboardData() {
-  const supabase = createClient()
-  const now = new Date()
-
-  const startToday  = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const startMonth  = new Date(now.getFullYear(), now.getMonth(), 1)
-  const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
-
-  const [
-    { data: ventasHoyRaw },
-    { data: ventasMesRaw },
-    { data: productosRaw },
-    { data: ultimasRaw },
-    { data: semanaRaw },
-  ] = await Promise.all([
-    supabase.from('ventas').select('total').gte('fecha', startToday.toISOString()),
-    supabase.from('ventas').select('total').gte('fecha', startMonth.toISOString()),
-    supabase
-      .from('productos')
-      .select('id, nombre, stock_actual, stock_minimo, unidad, categorias(nombre)')
-      .eq('activo', true),
-    supabase
-      .from('ventas')
-      .select('id, fecha, total, metodo_pago')
-      .order('fecha', { ascending: false })
-      .limit(5),
-    supabase
-      .from('ventas')
-      .select('fecha, total')
-      .gte('fecha', sevenDaysAgo.toISOString()),
-  ])
-
-  // Stats
-  const totalHoy    = (ventasHoyRaw  || []).reduce((s, v) => s + Number(v.total), 0)
-  const cantidadHoy = ventasHoyRaw?.length ?? 0
-  const totalMes    = (ventasMesRaw  || []).reduce((s, v) => s + Number(v.total), 0)
-  const cantidadMes = ventasMesRaw?.length ?? 0
-  const ticketProm  = cantidadMes > 0 ? totalMes / cantidadMes : 0
-
-  // Stock bajo (filtramos en JS porque el SDK no compara columnas entre sí)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stockBajo = ((productosRaw || []) as any as Producto[])
-    .filter((p) => p.stock_actual < p.stock_minimo)
-    .sort((a, b) => (a.stock_actual - a.stock_minimo) - (b.stock_actual - b.stock_minimo))
-
-  // Ventas últimas 5
-  const ultimasVentas = (ultimasRaw || []) as Venta[]
-
-  // Datos para el gráfico: 7 días con total 0 si no hay ventas
-  const salesByDay: Record<string, number> = {}
-  for (const v of semanaRaw || []) {
-    const day = new Date(v.fecha).toLocaleDateString('en-CA')
-    salesByDay[day] = (salesByDay[day] || 0) + Number(v.total)
-  }
-
-  const chartData = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i))
-    const key = d.toLocaleDateString('en-CA')
-    return {
-      dia: key,
-      total: salesByDay[key] || 0,
-      label: d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' }),
-    }
-  })
-
-  return { totalHoy, cantidadHoy, totalMes, cantidadMes, ticketProm, stockBajo, ultimasVentas, chartData }
+const METODO_CFG: Record<string, { label: string; color: string; bg: string }> = {
+  efectivo:      { label: 'Efectivo',      color: 'text-emerald-700', bg: 'bg-emerald-100' },
+  transferencia: { label: 'Transferencia', color: 'text-blue-700',    bg: 'bg-blue-100'    },
+  debito:        { label: 'Débito',        color: 'text-violet-700',  bg: 'bg-violet-100'  },
+  credito:       { label: 'Crédito',       color: 'text-amber-700',   bg: 'bg-amber-100'   },
 }
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
-  const {
-    totalHoy, cantidadHoy,
-    totalMes, cantidadMes,
-    ticketProm,
-    stockBajo,
-    ultimasVentas,
-    chartData,
-  } = await getDashboardData()
+  const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: perfilData } = await supabase
+    .from('perfiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+
+  const perfil = perfilData as Perfil | null
+
+  if (!tieneAcceso(perfil, 'dashboard')) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-2">
+          <p className="text-slate-700 font-medium">Sin acceso al Dashboard</p>
+          <p className="text-slate-400 text-sm">Tu rol no tiene permiso para ver esta sección.</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Inicio del día en Argentina (UTC-3, sin DST)
+  const hoyLocal    = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  const hoyStartUTC = new Date(`${hoyLocal}T03:00:00.000Z`)
+
+  const [ventasRes, productosRes, arqueoRes] = await Promise.all([
+    supabase
+      .from('ventas')
+      .select(`
+        id, total, metodo_pago,
+        venta_items ( cantidad, productos ( nombre ) )
+      `)
+      .gte('fecha', hoyStartUTC.toISOString()),
+    supabase
+      .from('productos')
+      .select('id, nombre, stock_actual, stock_minimo, unidad, categorias ( nombre )')
+      .eq('activo', true),
+    supabase
+      .from('arqueos_caja')
+      .select('monto_inicial, fecha_apertura')
+      .eq('estado', 'abierta')
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ventas: any[] = ventasRes.data ?? []
+  const totalHoy    = ventas.reduce((s, v) => s + Number(v.total), 0)
+  const cantidadHoy = ventas.length
+
+  // Desglose por método de pago
+  const porMetodo: Record<string, { total: number; cantidad: number }> = {}
+  for (const v of ventas) {
+    const m = v.metodo_pago as string
+    if (!porMetodo[m]) porMetodo[m] = { total: 0, cantidad: 0 }
+    porMetodo[m].total    += Number(v.total)
+    porMetodo[m].cantidad += 1
+  }
+
+  // Top 5 productos vendidos hoy (agrupado por nombre)
+  const productoMap: Record<string, number> = {}
+  for (const v of ventas) {
+    for (const item of (v.venta_items ?? [])) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nombre = (item.productos as any)?.nombre ?? 'Desconocido'
+      productoMap[nombre] = (productoMap[nombre] ?? 0) + Number(item.cantidad)
+    }
+  }
+  const top5 = Object.entries(productoMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+
+  // Stock bajo
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stockBajo = ((productosRes.data ?? []) as any[])
+    .filter((p) => p.stock_actual < p.stock_minimo)
+    .sort((a, b) => (a.stock_actual - a.stock_minimo) - (b.stock_actual - b.stock_minimo))
+
+  const arqueo = arqueoRes.data
 
   const fechaHoy = new Date().toLocaleDateString('es-AR', {
     weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    year:    'numeric',
+    month:   'long',
+    day:     'numeric',
+    timeZone: 'America/Argentina/Buenos_Aires',
   })
-
-  const stats = [
-    {
-      label: 'Ventas hoy',
-      value: ARS(totalHoy),
-      sub: cantidadHoy === 0 ? 'Sin transacciones' : `${cantidadHoy} ${cantidadHoy === 1 ? 'transacción' : 'transacciones'}`,
-      icon: ShoppingCart,
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-    },
-    {
-      label: 'Ventas del mes',
-      value: ARS(totalMes),
-      sub: cantidadMes === 0 ? 'Sin ventas' : `${cantidadMes} ${cantidadMes === 1 ? 'venta' : 'ventas'}`,
-      icon: TrendingUp,
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-    },
-    {
-      label: 'Ticket promedio',
-      value: ticketProm > 0 ? ARS(ticketProm) : '$0',
-      sub: 'Por venta este mes',
-      icon: Package,
-      iconBg: 'bg-violet-100',
-      iconColor: 'text-violet-600',
-    },
-    {
-      label: 'Stock bajo',
-      value: stockBajo.length.toString(),
-      sub: stockBajo.length === 0 ? 'Todo en orden' : `${stockBajo.length === 1 ? 'producto' : 'productos'} por reponer`,
-      icon: AlertTriangle,
-      iconBg: stockBajo.length > 0 ? 'bg-red-100' : 'bg-slate-100',
-      iconColor: stockBajo.length > 0 ? 'text-red-500' : 'text-slate-400',
-    },
-  ]
 
   return (
     <div className="p-8 space-y-6">
@@ -178,123 +125,150 @@ export default async function DashboardPage() {
         <p className="text-slate-500 text-sm mt-0.5 capitalize">{fechaHoy}</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {stats.map(({ label, value, sub, icon: Icon, iconBg, iconColor }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-200 p-5 flex items-start gap-4">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
-              <Icon className={`w-5 h-5 ${iconColor}`} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
-              <p className="text-xl font-bold text-slate-900 mt-0.5">{value}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
-            </div>
+      {/* Stats principales */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+        {/* Ventas hoy */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-start gap-4">
+          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+            <ShoppingCart className="w-5 h-5 text-blue-600" />
           </div>
-        ))}
-      </div>
-
-      {/* Gráfico + Stock bajo */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-
-        {/* Gráfico ventas 7 días */}
-        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Ventas — últimos 7 días</h2>
-          <p className="text-xs text-slate-400 mb-4">Total por día</p>
-          <VentasChart data={chartData} />
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Ventas hoy</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{ARS(totalHoy)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {cantidadHoy === 0
+                ? 'Sin transacciones'
+                : `${cantidadHoy} ${cantidadHoy === 1 ? 'venta' : 'ventas'}`}
+            </p>
+          </div>
         </div>
 
-        {/* Productos con stock bajo */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Stock bajo</h2>
-          <p className="text-xs text-slate-400 mb-4">Por debajo del mínimo</p>
+        {/* Estado de caja */}
+        <div className={`bg-white rounded-xl border p-5 flex items-start gap-4 ${arqueo ? 'border-emerald-200' : 'border-slate-200'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${arqueo ? 'bg-emerald-100' : 'bg-slate-100'}`}>
+            {arqueo
+              ? <Unlock className="w-5 h-5 text-emerald-600" />
+              : <Lock   className="w-5 h-5 text-slate-400"   />
+            }
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Caja</p>
+            <p className={`text-xl font-bold mt-0.5 ${arqueo ? 'text-emerald-700' : 'text-slate-400'}`}>
+              {arqueo ? 'Abierta' : 'Cerrada'}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {arqueo
+                ? `Inicial: ${ARS(Number(arqueo.monto_inicial))}`
+                : 'Sin turno activo'}
+            </p>
+          </div>
+        </div>
 
-          {stockBajo.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center mb-3">
-                <Package className="w-5 h-5 text-emerald-600" />
-              </div>
-              <p className="text-sm text-slate-500">Todos los productos tienen stock suficiente</p>
+        {/* Stock bajo */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-start gap-4">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${stockBajo.length > 0 ? 'bg-red-100' : 'bg-slate-100'}`}>
+            <AlertTriangle className={`w-5 h-5 ${stockBajo.length > 0 ? 'text-red-500' : 'text-slate-400'}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Stock bajo</p>
+            <p className={`text-xl font-bold mt-0.5 ${stockBajo.length > 0 ? 'text-red-600' : 'text-slate-900'}`}>
+              {stockBajo.length}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {stockBajo.length === 0
+                ? 'Todo en orden'
+                : `${stockBajo.length === 1 ? 'producto' : 'productos'} por reponer`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Desglose métodos + Top productos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Cobros por método */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Cobros de hoy por método</h2>
+          {Object.keys(porMetodo).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <p className="text-sm text-slate-400">Todavía no hay ventas hoy</p>
             </div>
           ) : (
-            <ul className="space-y-2.5">
-              {stockBajo.slice(0, 7).map((p) => (
-                <li key={p.id} className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{p.nombre}</p>
-                    <p className="text-xs text-slate-400">
-                      {p.categorias?.nombre ?? '—'}
-                    </p>
+            <div className="space-y-3">
+              {Object.entries(porMetodo).map(([metodo, data]) => {
+                const cfg = METODO_CFG[metodo] ?? { label: metodo, color: 'text-slate-700', bg: 'bg-slate-100' }
+                return (
+                  <div key={metodo} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}>
+                        {cfg.label}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {data.cantidad} {data.cantidad === 1 ? 'venta' : 'ventas'}
+                      </span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-800">{ARS(data.total)}</span>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-red-600">
-                      {p.stock_actual} {p.unidad}
-                    </p>
-                    <p className="text-xs text-slate-400">mín. {p.stock_minimo}</p>
-                  </div>
+                )
+              })}
+              <div className="pt-2 border-t border-slate-100 flex justify-between">
+                <span className="text-xs font-medium text-slate-500">Total</span>
+                <span className="text-sm font-bold text-slate-900">{ARS(totalHoy)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Top 5 productos */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Productos más vendidos hoy</h2>
+          {top5.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Package className="w-8 h-8 text-slate-200 mb-2" />
+              <p className="text-sm text-slate-400">Sin ventas registradas hoy</p>
+            </div>
+          ) : (
+            <ol className="space-y-3">
+              {top5.map(([nombre, cantidad], i) => (
+                <li key={nombre} className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-xs font-bold flex items-center justify-center shrink-0">
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 text-sm text-slate-700 truncate">{nombre}</span>
+                  <span className="text-sm font-semibold text-slate-900 shrink-0">{cantidad} u.</span>
                 </li>
               ))}
-              {stockBajo.length > 7 && (
-                <p className="text-xs text-slate-400 text-center pt-1">
-                  +{stockBajo.length - 7} más
-                </p>
-              )}
-            </ul>
+            </ol>
           )}
         </div>
       </div>
 
-      {/* Últimas ventas */}
-      <div className="bg-white rounded-xl border border-slate-200">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700">Últimas ventas</h2>
+      {/* Alertas de stock bajo (detalle) */}
+      {stockBajo.length > 0 && (
+        <div className="bg-white rounded-xl border border-red-200 p-5">
+          <h2 className="text-sm font-semibold text-red-700 mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            Alertas de stock bajo ({stockBajo.length})
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {stockBajo.map((p: any) => (
+              <div key={p.id} className="flex items-center justify-between bg-red-50 rounded-lg px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 truncate">{p.nombre}</p>
+                  <p className="text-xs text-slate-400">{p.categorias?.nombre ?? '—'}</p>
+                </div>
+                <div className="text-right shrink-0 ml-3">
+                  <p className="text-sm font-semibold text-red-600">{p.stock_actual} {p.unidad}</p>
+                  <p className="text-xs text-slate-400">mín. {p.stock_minimo}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+      )}
 
-        {ultimasVentas.length === 0 ? (
-          <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
-            No hay ventas registradas aún
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide">
-                  <th className="px-5 py-3">Fecha y hora</th>
-                  <th className="px-5 py-3">Método de pago</th>
-                  <th className="px-5 py-3 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {ultimasVentas.map((v) => (
-                  <tr key={v.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3.5 text-slate-600">
-                      {new Date(v.fecha).toLocaleString('es-AR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          metodoBadge[v.metodo_pago] ?? 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {metodoLabel[v.metodo_pago] ?? v.metodo_pago}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right font-semibold text-slate-800">
-                      {ARS(Number(v.total))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
