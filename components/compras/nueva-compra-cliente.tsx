@@ -6,9 +6,10 @@ import Link from 'next/link'
 import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingBag, Package, Building2, Clock,
-  PackagePlus, ArrowRight, RefreshCw,
+  PackagePlus, ArrowRight, RefreshCw, Paperclip,
 } from 'lucide-react'
 import { crearCompra, crearProductoRapido } from '@/app/(dashboard)/compras/actions'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -78,9 +79,11 @@ export default function NuevaCompraCliente({
   const [preciosStr,  setPreciosStr]  = useState<Record<string, string>>({}) // inputs controlados
   const [proveedorId, setProveedorId] = useState<string>('')
   const [notas,       setNotas]       = useState('')
-  const [procesando,  setProcesando]  = useState(false)
-  const [error,       setError]       = useState<string | null>(null)
+  const [procesando,    setProcesando]    = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
   const [compraExitosa, setCompraExitosa] = useState<{ compraId: string; total: number } | null>(null)
+  const [archivoFile,   setArchivoFile]   = useState<File | null>(null)
+  const archivoInputRef                   = useRef<HTMLInputElement>(null)
 
   // ─── Modal: crear producto nuevo ──────────────────────────────────────────
   const [modalProducto, setModalProducto] = useState(false)
@@ -280,6 +283,25 @@ export default function NuevaCompraCliente({
     setProcesando(true)
     setError(null)
 
+    // Subir archivo si hay uno seleccionado
+    let archivo_path: string | undefined
+    let archivo_nombre: string | undefined
+    if (archivoFile) {
+      const supabase = createClient()
+      const ext  = archivoFile.name.split('.').pop()
+      const path = `compras/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('compras-archivos')
+        .upload(path, archivoFile, { contentType: archivoFile.type })
+      if (uploadError) {
+        setError(`Error al subir archivo: ${uploadError.message}`)
+        setProcesando(false)
+        return
+      }
+      archivo_path   = path
+      archivo_nombre = archivoFile.name
+    }
+
     const result = await crearCompra({
       proveedor_id: proveedorId || null,
       items: cart.map((i) => ({
@@ -289,6 +311,8 @@ export default function NuevaCompraCliente({
       })),
       notas,
       actualizarPrecios,
+      archivo_path,
+      archivo_nombre,
     })
 
     if (result.error) {
@@ -315,6 +339,8 @@ export default function NuevaCompraCliente({
     setProveedorId('')
     setNotas('')
     setBusqueda('')
+    setArchivoFile(null)
+    if (archivoInputRef.current) archivoInputRef.current.value = ''
     setTimeout(() => searchRef.current?.focus(), 0)
   }
 
@@ -612,6 +638,49 @@ export default function NuevaCompraCliente({
                       onChange={(e) => setNotas(e.target.value)}
                       placeholder="Remito, factura, observaciones..."
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-slate-500 font-medium uppercase tracking-wide block mb-1.5">
+                      Archivo adjunto (opcional)
+                    </label>
+                    {archivoFile ? (
+                      <div className="flex items-center gap-2 px-3 py-2 border border-emerald-200 bg-emerald-50 rounded-lg">
+                        <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="text-sm text-emerald-800 truncate flex-1">{archivoFile.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setArchivoFile(null); if (archivoInputRef.current) archivoInputRef.current.value = '' }}
+                          className="text-emerald-500 hover:text-red-500 transition-colors shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => archivoInputRef.current?.click()}
+                        className="w-full flex items-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                        Adjuntar PDF, imagen o Excel (máx. 10 MB)
+                      </button>
+                    )}
+                    <input
+                      ref={archivoInputRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        if (f.size > 10 * 1024 * 1024) {
+                          setError('El archivo no puede superar 10 MB.')
+                          return
+                        }
+                        setArchivoFile(f)
+                      }}
                     />
                   </div>
                 </div>

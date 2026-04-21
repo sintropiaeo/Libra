@@ -16,6 +16,8 @@ export async function crearCompra(payload: {
   items: ItemCompra[]
   notas?: string
   actualizarPrecios?: { producto_id: string; precio_costo: number }[]
+  archivo_path?: string
+  archivo_nombre?: string
 }): Promise<{ error?: string; compraId?: string }> {
   const supabase = createClient()
 
@@ -32,9 +34,11 @@ export async function crearCompra(payload: {
   const { data: compra, error: compraError } = await supabase
     .from('compras_proveedor')
     .insert({
-      proveedor_id: payload.proveedor_id || null,
+      proveedor_id:   payload.proveedor_id || null,
       total,
-      notas: payload.notas?.trim() || null,
+      notas:          payload.notas?.trim() || null,
+      archivo_path:   payload.archivo_path   || null,
+      archivo_nombre: payload.archivo_nombre || null,
     })
     .select('id')
     .single()

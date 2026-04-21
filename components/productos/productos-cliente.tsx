@@ -3,13 +3,14 @@
 import { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Plus, Search, AlertTriangle, X, Package,
+  Plus, Search, AlertTriangle, X, Package, Upload,
 } from 'lucide-react'
 import {
   crearProducto,
   actualizarProducto,
   toggleActivoProducto,
 } from '@/app/(dashboard)/productos/actions'
+import ImportarModal from '@/components/productos/importar-modal'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -89,12 +90,15 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
   const [busqueda,  setBusqueda]  = useState('')
   const [catFiltro, setCatFiltro] = useState('')
 
-  // Modal
+  // Modal crear/editar
   const [modalAbierto,     setModalAbierto]     = useState(false)
   const [productoEditando, setProductoEditando] = useState<Producto | null>(null)
   const [form,             setForm]             = useState<FormValues>(FORM_VACIO)
   const [guardando,        setGuardando]        = useState(false)
   const [error,            setError]            = useState<string | null>(null)
+
+  // Modal importar
+  const [modalImportar, setModalImportar] = useState(false)
 
   // ─── Filtrado ──────────────────────────────────────────────────────────────
 
@@ -188,15 +192,26 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
           <h1 className="text-2xl font-bold text-slate-900">Productos</h1>
           <p className="text-slate-500 text-sm mt-0.5">Gestión de inventario y precios</p>
         </div>
-        {puedeEditar && (
-          <button
-            onClick={abrirNuevo}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo producto
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {puedeEditar && (
+            <button
+              onClick={() => setModalImportar(true)}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors border border-slate-200"
+            >
+              <Upload className="w-4 h-4" />
+              Importar
+            </button>
+          )}
+          {puedeEditar && (
+            <button
+              onClick={abrirNuevo}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo producto
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filtros */}
@@ -555,6 +570,17 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal importar productos */}
+      {modalImportar && (
+        <ImportarModal
+          onClose={() => setModalImportar(false)}
+          onSuccess={() => {
+            setModalImportar(false)
+            startTransition(() => router.refresh())
+          }}
+        />
       )}
     </div>
   )
