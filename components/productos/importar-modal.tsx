@@ -43,7 +43,12 @@ const BATCH_SIZE = 500
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toNum(v: unknown): number {
-  const n = Number(String(v ?? '').replace(',', '.'))
+  if (typeof v === 'number') return isNaN(v) ? 0 : v
+  const s = String(v ?? '').trim()
+    .replace(/[$ ]/g, '')        // quitar símbolo $ y espacios
+    .replace(/\./g, '')          // quitar separadores de miles (1.500 → 1500)
+    .replace(',', '.')           // coma decimal → punto (1500,50 → 1500.50)
+  const n = Number(s)
   return isNaN(n) ? 0 : n
 }
 
@@ -89,7 +94,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
         const ws     = wb.Sheets[wb.SheetNames[0]]
         const json   = xlsxUtils.sheet_to_json<Record<string, unknown>>(ws, {
           defval: '',
-          raw: false,
+          raw: true,     // números como JS number, no como string formateado
         })
 
         if (json.length === 0) { setErrorMsg('El archivo no tiene datos.'); return }
