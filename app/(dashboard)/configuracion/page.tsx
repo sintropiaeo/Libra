@@ -20,13 +20,14 @@ export default async function ConfiguracionPage() {
     .single()
 
   const perfil = perfilData as Perfil | null
-  if (perfil?.rol !== 'admin') redirect('/dashboard')
+  if (perfil?.rol !== 'admin' && perfil?.rol !== 'super_admin') redirect('/dashboard')
 
   // Cargar todos los datos necesarios en paralelo
   const [empleadosRes, negocioRes, categoriasRes] = await Promise.all([
     supabase
       .from('perfiles')
       .select('*')
+      .not('rol', 'eq', 'super_admin')   // super_admin es invisible
       .order('created_at', { ascending: true }),
     supabase.from('negocio_config').select('*').limit(1).single(),
     supabase.from('categorias').select('*').order('nombre', { ascending: true }),

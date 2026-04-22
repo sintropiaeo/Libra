@@ -12,10 +12,11 @@ import {
   LogOut,
   BookOpen,
   Settings,
+  ShieldAlert,
 } from 'lucide-react'
 import { signOut } from '@/app/login/actions'
 import type { Perfil } from '@/lib/permisos'
-import { tieneAcceso } from '@/lib/permisos'
+import { tieneAcceso, esSuperAdmin } from '@/lib/permisos'
 
 const NAV_ITEMS = [
   { label: 'Dashboard',   href: '/dashboard',    icon: LayoutDashboard, seccion: 'dashboard'   as const },
@@ -33,7 +34,8 @@ export default function Sidebar({
   userEmail: string
   perfil: Perfil
 }) {
-  const pathname = usePathname()
+  const pathname   = usePathname()
+  const superAdmin = esSuperAdmin(perfil)
 
   const visibleItems = NAV_ITEMS.filter((item) =>
     tieneAcceso(perfil, item.seccion)
@@ -78,8 +80,8 @@ export default function Sidebar({
           </Link>
         ))}
 
-        {/* Separador + Configuración (solo admin) */}
-        {perfil.rol === 'admin' && (
+        {/* Configuración (admin y super_admin) */}
+        {(perfil.rol === 'admin' || superAdmin) && (
           <>
             <div className="my-2 border-t border-slate-800" />
             <Link
@@ -91,23 +93,42 @@ export default function Sidebar({
             </Link>
           </>
         )}
+
+        {/* Super Admin — invisible para todos los demás */}
+        {superAdmin && (
+          <>
+            <div className="my-2 border-t border-slate-700" />
+            <Link
+              href="/super-admin"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                pathname.startsWith('/super-admin')
+                  ? 'bg-violet-600 text-white'
+                  : 'text-violet-400 hover:bg-violet-900/40 hover:text-violet-200'
+              }`}
+            >
+              <ShieldAlert className="w-5 h-5 shrink-0" />
+              Super Admin
+            </Link>
+          </>
+        )}
       </nav>
 
-      {/* Usuario + rol + Cerrar sesión */}
+      {/* Usuario + Cerrar sesión */}
       <div className="px-3 py-3 border-t border-slate-800">
         <div className="px-3 py-2 mb-1">
           <p className="text-slate-200 text-xs font-semibold truncate">
             {perfil.nombre}
           </p>
           <p className="text-slate-500 text-xs truncate">{userEmail}</p>
+          {/* Badge: super_admin se muestra como Administrador normal */}
           <span
             className={`inline-block text-xs px-1.5 py-0.5 rounded mt-1 font-medium ${
-              perfil.rol === 'admin'
-                ? 'bg-blue-900/60 text-blue-300'
-                : 'bg-slate-700 text-slate-400'
+              perfil.rol === 'empleado'
+                ? 'bg-slate-700 text-slate-400'
+                : 'bg-blue-900/60 text-blue-300'
             }`}
           >
-            {perfil.rol === 'admin' ? 'Administrador' : 'Empleado'}
+            {perfil.rol === 'empleado' ? 'Empleado' : 'Administrador'}
           </span>
         </div>
         <form action={signOut}>

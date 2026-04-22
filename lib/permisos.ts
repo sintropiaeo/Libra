@@ -1,6 +1,6 @@
 // ─── Tipos ─────────────────────────────────────────────────────────────────
 
-export type Rol = 'admin' | 'empleado'
+export type Rol = 'super_admin' | 'admin' | 'empleado'
 
 export interface PermisosEmpleado {
   dashboard:    boolean
@@ -62,11 +62,20 @@ type Seccion =
   | 'compras'
   | 'reportes'
   | 'configuracion'
+  | 'super_admin'
+
+export function esSuperAdmin(perfil: Perfil | null): boolean {
+  return perfil?.rol === 'super_admin'
+}
 
 export function tieneAcceso(perfil: Perfil | null, seccion: Seccion): boolean {
   if (!perfil || !perfil.activo) return false
-  if (perfil.rol === 'admin') return true
-  if (seccion === 'configuracion') return false
+  // super_admin tiene acceso a todo
+  if (perfil.rol === 'super_admin') return true
+  if (perfil.rol === 'admin') {
+    return seccion !== 'super_admin'
+  }
+  if (seccion === 'configuracion' || seccion === 'super_admin') return false
 
   const p = perfil.permisos
   switch (seccion) {
@@ -82,12 +91,12 @@ export function tieneAcceso(perfil: Perfil | null, seccion: Seccion): boolean {
 
 export function puedeEditarProductos(perfil: Perfil | null): boolean {
   if (!perfil) return false
-  if (perfil.rol === 'admin') return true
+  if (perfil.rol === 'super_admin' || perfil.rol === 'admin') return true
   return perfil.permisos.productos === 'editar'
 }
 
 export function puedeRegistrarCompras(perfil: Perfil | null): boolean {
   if (!perfil) return false
-  if (perfil.rol === 'admin') return true
+  if (perfil.rol === 'super_admin' || perfil.rol === 'admin') return true
   return perfil.permisos.compras === 'registrar'
 }
