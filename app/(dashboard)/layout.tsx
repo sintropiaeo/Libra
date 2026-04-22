@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
+import BienvenidaModal from '@/components/bienvenida-modal'
 import type { Perfil } from '@/lib/permisos'
 import { PERMISOS_DEFAULT } from '@/lib/permisos'
 import { signOut } from '@/app/login/actions'
@@ -82,6 +83,7 @@ export default async function DashboardLayout({
       <div className="flex-1 ml-64 min-w-0">
         {children}
       </div>
+      {perfil.rol === 'admin' && <BienvenidaModal perfilId={perfil.id} />}
     </div>
   )
 }
