@@ -22,6 +22,18 @@ export async function crearVenta(payload: {
     return { error: 'El carrito está vacío.' }
   }
 
+  // Verificar caja abierta
+  const { data: cajaAbierta } = await supabase
+    .from('arqueos_caja')
+    .select('id')
+    .eq('estado', 'abierta')
+    .limit(1)
+    .maybeSingle()
+
+  if (!cajaAbierta) {
+    return { error: 'Debe abrir la caja antes de registrar una venta.' }
+  }
+
   // Calcular total en el servidor (no confiar en el cliente)
   const total = payload.items.reduce(
     (sum, item) => sum + item.precio_unitario * item.cantidad,
