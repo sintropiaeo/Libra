@@ -2,6 +2,18 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { puedeRegistrarCompras } from '@/lib/permisos'
+import type { Perfil } from '@/lib/permisos'
+
+async function verificarRegistradorCompras() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  const perfil = data as Perfil | null
+  if (!puedeRegistrarCompras(perfil)) return null
+  return supabase
+}
 
 type ItemCompra = {
   producto_id: string
@@ -19,7 +31,8 @@ export async function crearCompra(payload: {
   archivo_path?: string
   archivo_nombre?: string
 }): Promise<{ error?: string; compraId?: string }> {
-  const supabase = createClient()
+  const supabase = await verificarRegistradorCompras()
+  if (!supabase) return { error: 'Sin permisos.' }
 
   if (!payload.items.length) {
     return { error: 'Agregá al menos un producto.' }
@@ -99,7 +112,8 @@ type ProductoRapido = {
 export async function crearProductoRapido(
   formData: FormData
 ): Promise<{ error?: string; producto?: ProductoRapido }> {
-  const supabase = createClient()
+  const supabase = await verificarRegistradorCompras()
+  if (!supabase) return { error: 'Sin permisos.' }
 
   const nombre     = (formData.get('nombre') as string)?.trim()
   const unidad     = (formData.get('unidad') as string) || 'unidad'

@@ -2,11 +2,23 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { tieneAcceso } from '@/lib/permisos'
+import type { Perfil } from '@/lib/permisos'
 
 type ActionResult = { error?: string; success?: boolean }
 
-export async function crearProveedor(formData: FormData): Promise<ActionResult> {
+async function verificarAccesoProveedores() {
   const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  if (!tieneAcceso(data as Perfil | null, 'proveedores')) return null
+  return supabase
+}
+
+export async function crearProveedor(formData: FormData): Promise<ActionResult> {
+  const supabase = await verificarAccesoProveedores()
+  if (!supabase) return { error: 'Sin permisos.' }
 
   const { error } = await supabase.from('proveedores').insert({
     nombre:    (formData.get('nombre') as string).trim(),
@@ -25,7 +37,8 @@ export async function actualizarProveedor(
   id: string,
   formData: FormData
 ): Promise<ActionResult> {
-  const supabase = createClient()
+  const supabase = await verificarAccesoProveedores()
+  if (!supabase) return { error: 'Sin permisos.' }
 
   const { error } = await supabase
     .from('proveedores')
@@ -47,7 +60,8 @@ export async function toggleActivoProveedor(
   id: string,
   activo: boolean
 ): Promise<ActionResult> {
-  const supabase = createClient()
+  const supabase = await verificarAccesoProveedores()
+  if (!supabase) return { error: 'Sin permisos.' }
   const { error } = await supabase
     .from('proveedores')
     .update({ activo })

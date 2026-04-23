@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { tieneAcceso } from '@/lib/permisos'
+import type { Perfil } from '@/lib/permisos'
 
 type ItemVenta = {
   producto_id: string
@@ -17,6 +19,11 @@ export async function crearVenta(payload: {
   notas?: string
 }): Promise<{ error?: string; ventaId?: string; numeroVenta?: number }> {
   const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado.' }
+  const { data: perfilData } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  if (!tieneAcceso(perfilData as Perfil | null, 'ventas')) return { error: 'Sin permisos.' }
 
   if (!payload.items.length) {
     return { error: 'El carrito está vacío.' }

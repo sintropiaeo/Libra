@@ -2,11 +2,24 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { puedeEditarProductos } from '@/lib/permisos'
+import type { Perfil } from '@/lib/permisos'
 
 type ActionResult = { error?: string; success?: boolean }
 
-export async function crearProducto(formData: FormData): Promise<ActionResult> {
+async function verificarEditorProductos() {
   const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  const perfil = data as Perfil | null
+  if (!puedeEditarProductos(perfil)) return null
+  return supabase
+}
+
+export async function crearProducto(formData: FormData): Promise<ActionResult> {
+  const supabase = await verificarEditorProductos()
+  if (!supabase) return { error: 'Sin permisos.' }
 
   const { error } = await supabase.from('productos').insert({
     nombre:                   (formData.get('nombre') as string).trim(),
@@ -30,7 +43,8 @@ export async function actualizarProducto(
   id: string,
   formData: FormData
 ): Promise<ActionResult> {
-  const supabase = createClient()
+  const supabase = await verificarEditorProductos()
+  if (!supabase) return { error: 'Sin permisos.' }
 
   const { error } = await supabase
     .from('productos')
@@ -57,7 +71,8 @@ export async function toggleActivoProducto(
   id: string,
   activo: boolean
 ): Promise<ActionResult> {
-  const supabase = createClient()
+  const supabase = await verificarEditorProductos()
+  if (!supabase) return { error: 'Sin permisos.' }
   const { error } = await supabase
     .from('productos')
     .update({ activo })
@@ -93,7 +108,8 @@ export async function importarLoteProductos(
   batch: ProductoImport[],
   onDuplicate: 'actualizar' | 'saltar'
 ): Promise<ImportLoteResult> {
-  const supabase = createClient()
+  const supabase = await verificarEditorProductos()
+  if (!supabase) return { insertados: 0, actualizados: 0, saltados: 0, error: 'Sin permisos.' }
 
   // Resolver categorías únicas en este lote
   const setNombres = new Set(batch.map((p) => p.categoria_nombre).filter(Boolean) as string[])

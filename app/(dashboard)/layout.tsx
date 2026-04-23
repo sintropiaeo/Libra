@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
 import BienvenidaModal from '@/components/bienvenida-modal'
 import type { Perfil } from '@/lib/permisos'
-import { PERMISOS_DEFAULT } from '@/lib/permisos'
 import { signOut } from '@/app/login/actions'
 
 export default async function DashboardLayout({
@@ -18,35 +17,11 @@ export default async function DashboardLayout({
 
   if (!user) redirect('/login')
 
-  let { data: perfilData } = await supabase
+  const { data: perfilData } = await supabase
     .from('perfiles')
     .select('*')
     .eq('user_id', user.id)
     .single()
-
-  // Si no tiene perfil todavía, crearlo automáticamente
-  if (!perfilData) {
-    const { count } = await supabase
-      .from('perfiles')
-      .select('*', { count: 'exact', head: true })
-
-    const esAdmin = (count ?? 0) === 0
-
-    const { data: nuevo } = await supabase
-      .from('perfiles')
-      .insert({
-        user_id: user.id,
-        nombre:  user.email!.split('@')[0],
-        email:   user.email!,
-        rol:     esAdmin ? 'admin' : 'empleado',
-        permisos: esAdmin ? {} : PERMISOS_DEFAULT,
-        activo:  true,
-      })
-      .select()
-      .single()
-
-    perfilData = nuevo
-  }
 
   const perfil = perfilData as Perfil | null
 
