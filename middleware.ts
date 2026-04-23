@@ -32,8 +32,11 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Sin sesión y no está en /login → redirigir a /login
-  if (!user && !pathname.startsWith('/login')) {
+  const rutasPublicas = ['/login', '/registro', '/auth']
+  const esPublica = rutasPublicas.some(r => pathname.startsWith(r))
+
+  // Sin sesión y no es ruta pública → redirigir a /login
+  if (!user && !esPublica) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
