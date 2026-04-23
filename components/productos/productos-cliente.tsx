@@ -64,7 +64,7 @@ const FORM_VACIO: FormValues = {
   stock_minimo:             '5',
   codigo_barras:            '',
   unidad:                   'unidad',
-  permitir_venta_sin_stock: false,
+  permitir_venta_sin_stock: true,
 }
 
 const ARS = (v: number) =>

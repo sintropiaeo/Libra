@@ -46,7 +46,7 @@ export async function cerrarCaja(payload: {
   montoFinalReal:      number
   montoFinalEsperado:  number
   observaciones?:      string
-}): Promise<{ error?: string }> {
+}): Promise<{ error?: string; arqueo?: Record<string, unknown> }> {
   const supabase = createClient()
   const {
     data: { user },
@@ -56,7 +56,7 @@ export async function cerrarCaja(payload: {
   const { arqueoId, montoFinalReal, montoFinalEsperado, observaciones } = payload
   const diferencia = montoFinalReal - montoFinalEsperado
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('arqueos_caja')
     .update({
       fecha_cierre:         new Date().toISOString(),
@@ -67,8 +67,10 @@ export async function cerrarCaja(payload: {
       estado:               'cerrada',
     })
     .eq('id', arqueoId)
+    .select()
+    .single()
 
   if (error) return { error: error.message }
   revalidatePath('/ventas/nueva')
-  return {}
+  return { arqueo: data as Record<string, unknown> }
 }

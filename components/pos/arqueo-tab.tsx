@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   LockOpen, Lock, X, AlertTriangle,
   TrendingUp, TrendingDown, CheckCircle2,
-  Banknote, CreditCard, Smartphone, ChevronDown, ChevronRight,
+  Banknote, CreditCard, Smartphone, ChevronDown, ChevronRight, Printer,
 } from 'lucide-react'
 import { abrirCaja, cerrarCaja } from '@/app/(dashboard)/ventas/arqueo/actions'
 
@@ -13,6 +13,7 @@ import { abrirCaja, cerrarCaja } from '@/app/(dashboard)/ventas/arqueo/actions'
 
 export interface ArqueoCaja {
   id:                   string
+  numero:               number | null
   usuario_id:           string
   usuario_nombre:       string
   fecha_apertura:       string
@@ -309,6 +310,87 @@ function makeDiffBadge(diferencia: number | null): DiffBadge | null {
   return { texto: `−${ARS(Math.abs(diferencia))} faltante`, color: 'text-red-600 bg-red-50 border-red-200', icon: <TrendingDown className="w-3.5 h-3.5" /> }
 }
 
+function imprimirArqueo(data: {
+  numero:              number | null
+  arqueo:              ArqueoCaja
+  ventasTurno:         VentaTurno[]
+  metodosActivos:      string[]
+  montosContados:      Record<string, string>
+  montoEsperadoTotal:  number
+  totalReal:           number
+  diferencia:          number
+  observaciones:       string
+}) {
+  const { numero, arqueo, ventasTurno, metodosActivos, montosContados, montoEsperadoTotal, totalReal, diferencia, observaciones } = data
+
+  const esperadoPorMetodo = (m: string) => {
+    const v = ventasTurno.filter(x => x.metodo_pago === m).reduce((s, x) => s + x.total, 0)
+    return m === 'efectivo' ? arqueo.monto_inicial + v : v
+  }
+
+  const lineas = metodosActivos.map(m => {
+    const cfg = getCfg(m)
+    const esp = esperadoPorMetodo(m)
+    const real = parseFloat((montosContados[m] ?? '0').replace(',', '.')) || 0
+    const dif = real - esp
+    return `
+      <tr>
+        <td>${cfg.label}</td>
+        <td style="text-align:right">${ARS(esp)}</td>
+        <td style="text-align:right">${ARS(real)}</td>
+        <td style="text-align:right;color:${Math.abs(dif)<1?'green':dif>0?'blue':'red'}">${dif>=0?'+':''}${ARS(dif)}</td>
+      </tr>`
+  }).join('')
+
+  const difColor = Math.abs(diferencia) < 1 ? 'green' : diferencia > 0 ? 'blue' : 'red'
+  const difTexto = Math.abs(diferencia) < 1 ? 'CUADRADA' : diferencia > 0 ? `SOBRANTE ${ARS(diferencia)}` : `FALTANTE ${ARS(Math.abs(diferencia))}`
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Arqueo #${numero ?? '—'}</title>
+  <style>
+    body { font-family: monospace; font-size: 12px; margin: 20px; color: #111; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    h2 { font-size: 13px; font-weight: normal; margin: 0 0 16px; color: #555; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    th { text-align: left; border-bottom: 1px solid #ccc; padding: 4px 0; font-size: 11px; color: #666; }
+    td { padding: 4px 0; }
+    .sep { border-top: 1px dashed #999; margin: 12px 0; }
+    .total-row { font-weight: bold; font-size: 13px; }
+    .dif { font-size: 14px; font-weight: bold; text-align: center; padding: 8px; border: 2px solid; border-radius: 4px; margin-top: 12px; }
+    .obs { color: #555; font-style: italic; margin-top: 8px; }
+  </style></head><body>
+  <h1>Arqueo de Caja${numero ? ` #${String(numero).padStart(4,'0')}` : ''}</h1>
+  <h2>${formatFecha(arqueo.fecha_apertura)} — ${arqueo.fecha_cierre ? formatFecha(arqueo.fecha_cierre) : 'Ahora'}</h2>
+  <div class="sep"></div>
+  <div><strong>Operador:</strong> ${arqueo.usuario_nombre}</div>
+  <div><strong>Apertura:</strong> ${formatFecha(arqueo.fecha_apertura)}</div>
+  <div><strong>Cierre:</strong> ${arqueo.fecha_cierre ? formatFecha(arqueo.fecha_cierre) : formatFecha(new Date().toISOString())}</div>
+  <div><strong>Ventas en el turno:</strong> ${ventasTurno.length}</div>
+  <div class="sep"></div>
+  <table>
+    <thead><tr><th>Método</th><th style="text-align:right">Esperado</th><th style="text-align:right">Contado</th><th style="text-align:right">Diferencia</th></tr></thead>
+    <tbody>
+      <tr><td>Monto inicial</td><td style="text-align:right">${ARS(arqueo.monto_inicial)}</td><td></td><td></td></tr>
+      ${lineas}
+    </tbody>
+  </table>
+  <div class="sep"></div>
+  <table>
+    <tbody>
+      <tr class="total-row"><td>Total esperado</td><td style="text-align:right">${ARS(montoEsperadoTotal)}</td></tr>
+      <tr class="total-row"><td>Total contado</td><td style="text-align:right">${ARS(totalReal)}</td></tr>
+    </tbody>
+  </table>
+  <div class="dif" style="color:${difColor};border-color:${difColor}">${difTexto}</div>
+  ${observaciones ? `<div class="obs">Obs: ${observaciones}</div>` : ''}
+  <div class="sep"></div>
+  <div style="font-size:10px;color:#999;text-align:center">Libra — Sistema de gestión</div>
+  <script>window.onload=()=>{ window.print(); window.onafterprint=()=>window.close() }</script>
+  </body></html>`
+
+  const win = window.open('', '_blank', 'width=600,height=700')
+  if (win) { win.document.write(html); win.document.close() }
+}
+
 function ModalCierre({
   arqueo,
   ventasTurno,
@@ -328,6 +410,7 @@ function ModalCierre({
   const [observaciones, setObs]             = useState('')
   const [isPending, startTransition]        = useTransition()
   const [error, setError]                   = useState<string | null>(null)
+  const [arqueoFinal, setArqueoFinal]       = useState<Record<string, unknown> | null>(null)
 
   // Monto esperado por método:
   // - efectivo: monto_inicial + ventas_efectivo
@@ -364,7 +447,22 @@ function ModalCierre({
         observaciones,
       })
       if (res.error) { setError(res.error); return }
+      setArqueoFinal(res.arqueo ?? null)
       onCerrado()
+    })
+  }
+
+  function handleImprimir() {
+    imprimirArqueo({
+      numero:             (arqueoFinal?.numero as number | null) ?? arqueo.numero,
+      arqueo:             arqueoFinal ? { ...arqueo, ...arqueoFinal } as ArqueoCaja : arqueo,
+      ventasTurno,
+      metodosActivos,
+      montosContados,
+      montoEsperadoTotal,
+      totalReal:          totalReal ?? 0,
+      diferencia:         diferenciaTotal ?? 0,
+      observaciones,
     })
   }
 
@@ -493,19 +591,39 @@ function ModalCierre({
 
         {/* Footer */}
         <div className="flex gap-3 px-6 pb-5 pt-3 shrink-0 border-t border-slate-100">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleCerrar}
-            disabled={isPending || !todosCompletos}
-            className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
-          >
-            {isPending ? 'Cerrando…' : 'Confirmar cierre'}
-          </button>
+          {arqueoFinal ? (
+            <>
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={handleImprimir}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir arqueo
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCerrar}
+                disabled={isPending || !todosCompletos}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                {isPending ? 'Cerrando…' : 'Confirmar cierre'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -536,7 +654,10 @@ function HistorialArqueos({ historial }: { historial: ArqueoCaja[] }) {
                 className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors text-left"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800">{formatFecha(a.fecha_apertura)}</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {a.numero ? <span className="text-slate-400 font-normal mr-1.5">#{String(a.numero).padStart(4,'0')}</span> : null}
+                    {formatFecha(a.fecha_apertura)}
+                  </p>
                   <p className="text-xs text-slate-400">{a.usuario_nombre}</p>
                 </div>
                 <div className="text-right shrink-0">
@@ -582,6 +703,23 @@ function HistorialArqueos({ historial }: { historial: ArqueoCaja[] }) {
                       <span className="text-slate-500">Obs: {a.observaciones}</span>
                     </div>
                   )}
+                  <button
+                    onClick={() => imprimirArqueo({
+                      numero:             a.numero,
+                      arqueo:             a,
+                      ventasTurno:        [],
+                      metodosActivos:     [],
+                      montosContados:     {},
+                      montoEsperadoTotal: a.monto_final_esperado ?? 0,
+                      totalReal:          a.monto_final_real ?? 0,
+                      diferencia:         a.diferencia ?? 0,
+                      observaciones:      a.observaciones ?? '',
+                    })}
+                    className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium pt-1"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Imprimir
+                  </button>
                 </div>
               )}
             </li>
