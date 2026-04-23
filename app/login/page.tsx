@@ -10,11 +10,11 @@ export default async function LoginPage({
 }) {
   const supabase = createClient()
 
-  // Mostrar registro solo si no hay ningún admin todavía
+  // Mostrar registro solo si no hay ningún admin todavía (super_admin no cuenta)
   const { count } = await supabase
     .from('perfiles')
     .select('*', { count: 'exact', head: true })
-    .in('rol', ['admin', 'super_admin'])
+    .eq('rol', 'admin')
 
   const mostrarRegistro = (count ?? 0) === 0
 

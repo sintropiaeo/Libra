@@ -22,11 +22,11 @@ export async function registrar(
 
   const admin = createAdminClient()
 
-  // Doble check: que no haya admin aún
+  // Doble check: que no haya admin aún (super_admin no cuenta)
   const { count } = await admin
     .from('perfiles')
     .select('*', { count: 'exact', head: true })
-    .in('rol', ['admin', 'super_admin'])
+    .eq('rol', 'admin')
 
   if ((count ?? 0) > 0) {
     return { error: 'Ya existe un administrador registrado. Pedile que te cree una cuenta.' }

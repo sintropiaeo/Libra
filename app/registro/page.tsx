@@ -7,11 +7,11 @@ export const metadata = { title: 'Crear cuenta — Libra' }
 export default async function RegistroPage() {
   const supabase = createClient()
 
-  // Si ya hay un admin, el registro está cerrado
+  // Si ya hay un admin (no super_admin), el registro está cerrado
   const { count } = await supabase
     .from('perfiles')
     .select('*', { count: 'exact', head: true })
-    .in('rol', ['admin', 'super_admin'])
+    .eq('rol', 'admin')
 
   if ((count ?? 0) > 0) redirect('/login')
 
