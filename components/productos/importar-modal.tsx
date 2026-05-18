@@ -195,16 +195,26 @@ export default function ImportarModal({ onClose, onSuccess }: {
     let procesados = 0
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
-      const batch    = productos.slice(i, i + BATCH_SIZE)
+      const batchRaw = productos.slice(i, i + BATCH_SIZE)
       const loteNum  = Math.floor(i / BATCH_SIZE) + 1
       const lotesTot = Math.ceil(total / BATCH_SIZE)
 
       setProgresoTexto(
-        `Lote ${loteNum} de ${lotesTot} · cargando ${Math.min(i + BATCH_SIZE, total).toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} productos`
+        `Lote ${loteNum} de ${lotesTot} · ${Math.min(i + BATCH_SIZE, total).toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} productos`
       )
 
-      // Construir filas DB
-      const dbRows = batch.map((p) => ({
+      // Deduplicar dentro del batch: Postgres rechaza ON CONFLICT si el mismo
+      // código aparece dos veces en el mismo INSERT.
+      const seen = new Set<string>()
+      const batch = batchRaw.filter((p) => {
+        const codigo = p.codigo_barras?.trim()
+        if (!codigo) return true
+        if (seen.has(codigo)) return false
+        seen.add(codigo)
+        return true
+      })
+
+      const toRow = (p: ProductoImport) => ({
         nombre:                   p.nombre.trim(),
         descripcion:              p.descripcion?.trim() || null,
         categoria_id:             (p.categoria_nombre && categoriaMap[p.categoria_nombre]) || null,
@@ -216,24 +226,22 @@ export default function ImportarModal({ onClose, onSuccess }: {
         unidad:                   (['unidad','pack','resma','metro'].includes(p.unidad ?? '') ? p.unidad : 'unidad') as string,
         activo:                   true,
         permitir_venta_sin_stock: true,
-      }))
+      })
 
-      // Separar por código de barras (upsert vs insert)
-      const conBarras  = dbRows.filter((r) => r.codigo_barras)
-      const sinBarras  = dbRows.filter((r) => !r.codigo_barras)
-      const batchCon   = batch.filter((p) => p.codigo_barras?.trim())
-      const batchSin   = batch.filter((p) => !p.codigo_barras?.trim())
+      const conBarras = batch.filter((p) => p.codigo_barras?.trim())
+      const sinBarras = batch.filter((p) => !p.codigo_barras?.trim())
 
       // Upsert de los que tienen código de barras
       if (conBarras.length > 0) {
         const { error } = await supabase
           .from('productos')
-          .upsert(conBarras, {
+          .upsert(conBarras.map(toRow), {
             onConflict:       'codigo_barras',
             ignoreDuplicates: onDuplicate === 'saltar',
           })
         if (error) {
-          batchCon.forEach((p) => fallidos.push({ ...p, _error: error.message }))
+          console.error(`[Importar] lote ${loteNum} conBarras:`, error.message)
+          conBarras.forEach((p) => fallidos.push({ ...p, _error: error.message }))
         } else {
           totalImportados += conBarras.length
         }
@@ -241,15 +249,16 @@ export default function ImportarModal({ onClose, onSuccess }: {
 
       // Insert de los que NO tienen código de barras
       if (sinBarras.length > 0) {
-        const { error } = await supabase.from('productos').insert(sinBarras)
+        const { error } = await supabase.from('productos').insert(sinBarras.map(toRow))
         if (error) {
-          batchSin.forEach((p) => fallidos.push({ ...p, _error: error.message }))
+          console.error(`[Importar] lote ${loteNum} sinBarras:`, error.message)
+          sinBarras.forEach((p) => fallidos.push({ ...p, _error: error.message }))
         } else {
           totalImportados += sinBarras.length
         }
       }
 
-      procesados += batch.length
+      procesados += batchRaw.length
       setProgreso(Math.round((procesados / total) * 100))
     }
 
