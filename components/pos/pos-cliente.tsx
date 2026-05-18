@@ -199,9 +199,9 @@ ${itemsHTML}
 <div>Método: ${metodoLabel[data.metodoPago] ?? data.metodoPago}</div>
 ${pie}`
 
-    const copiasHTML = Array.from({ length: copias }, (_, i) =>
-      `<div class="copia">${ticketBody}</div>`
-    ).join('')
+    const copiasHTML = Array.from({ length: copias })
+      .map(() => `<div class="copia">${ticketBody}</div>`)
+      .join('')
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
