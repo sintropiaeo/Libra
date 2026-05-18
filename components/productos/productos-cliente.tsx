@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useTransition, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, AlertTriangle, X, Package, Upload,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
   crearProducto,
@@ -49,9 +50,9 @@ type FormValues = {
 
 const UNIDADES = [
   { value: 'unidad', label: 'Unidad' },
-  { value: 'pack',   label: 'Pack' },
-  { value: 'resma',  label: 'Resma' },
-  { value: 'metro',  label: 'Metro' },
+  { value: 'pack',   label: 'Pack'   },
+  { value: 'resma',  label: 'Resma'  },
+  { value: 'metro',  label: 'Metro'  },
 ]
 
 const FORM_VACIO: FormValues = {
@@ -69,26 +70,27 @@ const FORM_VACIO: FormValues = {
 
 const ARS = (v: number) =>
   new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
+    style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
   }).format(v)
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 interface Props {
-  initialProductos: Producto[]
-  categorias:       Categoria[]
-  puedeEditar?:     boolean
+  productos:   Producto[]
+  total:       number
+  page:        number
+  pageSize:    number
+  categorias:  Categoria[]
+  puedeEditar?: boolean
+  q:           string
+  cat:         string
 }
 
-export default function ProductosCliente({ initialProductos, categorias, puedeEditar = true }: Props) {
+export default function ProductosCliente({
+  productos, total, page, pageSize, categorias, puedeEditar = true, q, cat,
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-
-  // Filtros
-  const [busqueda,  setBusqueda]  = useState('')
-  const [catFiltro, setCatFiltro] = useState('')
 
   // Modal crear/editar
   const [modalAbierto,     setModalAbierto]     = useState(false)
@@ -100,16 +102,30 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
   // Modal importar
   const [modalImportar, setModalImportar] = useState(false)
 
-  // ─── Filtrado ──────────────────────────────────────────────────────────────
+  // Búsqueda con debounce (no hace navigate en cada tecla)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [busquedaLocal, setBusquedaLocal] = useState(q)
 
-  const productosFiltrados = useMemo(() => {
-    const q = busqueda.toLowerCase()
-    return initialProductos.filter((p) => {
-      const matchNombre = p.nombre.toLowerCase().includes(q)
-      const matchCat    = !catFiltro || p.categoria_id === catFiltro
-      return matchNombre && matchCat
-    })
-  }, [initialProductos, busqueda, catFiltro])
+  const navigate = useCallback((params: { q?: string; cat?: string; p?: number }) => {
+    const sp = new URLSearchParams()
+    const newQ   = params.q   !== undefined ? params.q   : q
+    const newCat = params.cat !== undefined ? params.cat : cat
+    const newP   = params.p   !== undefined ? params.p   : 1
+    if (newQ)   sp.set('q',   newQ)
+    if (newCat) sp.set('cat', newCat)
+    if (newP > 1) sp.set('p', String(newP))
+    startTransition(() => router.push(`/productos?${sp.toString()}`))
+  }, [q, cat, router])
+
+  function handleBusqueda(value: string) {
+    setBusquedaLocal(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => navigate({ q: value, p: 1 }), 350)
+  }
+
+  function handleCategoria(value: string) {
+    navigate({ cat: value, p: 1 })
+  }
 
   // ─── Modal helpers ────────────────────────────────────────────────────────
 
@@ -132,7 +148,7 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
       stock_minimo:             String(p.stock_minimo),
       codigo_barras:            p.codigo_barras ?? '',
       unidad:                   p.unidad,
-      permitir_venta_sin_stock: p.permitir_venta_sin_stock ?? false,
+      permitir_venta_sin_stock: p.permitir_venta_sin_stock ?? true,
     })
     setError(null)
     setModalAbierto(true)
@@ -175,6 +191,10 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
     startTransition(() => router.refresh())
   }
 
+  // ─── Paginación ────────────────────────────────────────────────────────────
+
+  const totalPages = Math.ceil(total / pageSize)
+
   // ─── Estilos reutilizables ────────────────────────────────────────────────
 
   const input =
@@ -190,7 +210,9 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Productos</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Gestión de inventario y precios</p>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {total.toLocaleString('es-AR')} productos en total
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {puedeEditar && (
@@ -219,16 +241,20 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
         <div className="relative flex-1 min-w-56">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
           <input
+            id="busqueda-productos"
+            name="busqueda-productos"
             type="search"
             placeholder="Buscar por nombre..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
+            value={busquedaLocal}
+            onChange={(e) => handleBusqueda(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white"
           />
         </div>
         <select
-          value={catFiltro}
-          onChange={(e) => setCatFiltro(e.target.value)}
+          id="categoria-filtro"
+          name="categoria-filtro"
+          value={cat}
+          onChange={(e) => handleCategoria(e.target.value)}
           className="px-3 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
         >
           <option value="">Todas las categorías</option>
@@ -239,24 +265,23 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
       </div>
 
       <p className="text-xs text-slate-400 mb-3">
-        {productosFiltrados.length}{' '}
-        {productosFiltrados.length === 1 ? 'producto' : 'productos'}
-        {(busqueda || catFiltro) && ' encontrados'}
+        {(q || cat)
+          ? `${total.toLocaleString('es-AR')} resultado${total !== 1 ? 's' : ''}`
+          : `Mostrando ${Math.min((page - 1) * pageSize + 1, total)}–${Math.min(page * pageSize, total)} de ${total.toLocaleString('es-AR')}`
+        }
       </p>
 
       {/* Tabla */}
-      <div className={`bg-white rounded-xl border border-slate-200 overflow-hidden transition-opacity ${isPending ? 'opacity-60' : ''}`}>
-        {productosFiltrados.length === 0 ? (
+      <div className={`bg-white rounded-xl border border-slate-200 overflow-hidden transition-opacity ${isPending ? 'opacity-60 pointer-events-none' : ''}`}>
+        {productos.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
               <Package className="w-6 h-6 text-slate-400" />
             </div>
             <p className="text-sm font-medium text-slate-600">
-              {busqueda || catFiltro
-                ? 'Sin resultados para esta búsqueda'
-                : 'No hay productos cargados'}
+              {q || cat ? 'Sin resultados para esta búsqueda' : 'No hay productos cargados'}
             </p>
-            {!busqueda && !catFiltro && (
+            {!q && !cat && (
               <p className="text-xs text-slate-400 mt-1">
                 Creá tu primer producto con el botón de arriba
               </p>
@@ -277,7 +302,7 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {productosFiltrados.map((p) => {
+                {productos.map((p) => {
                   const stockBajo = p.stock_actual < p.stock_minimo
                   return (
                     <tr
@@ -285,27 +310,20 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                       onClick={() => puedeEditar && abrirEditar(p)}
                       className={`transition-colors ${puedeEditar ? 'hover:bg-slate-50 cursor-pointer' : ''}`}
                     >
-                      {/* Nombre */}
                       <td className="px-5 py-4 max-w-xs">
                         <p className="font-medium text-slate-800">{p.nombre}</p>
-                        {p.descripcion && (
-                          <p className="text-xs text-slate-400 mt-0.5 truncate">{p.descripcion}</p>
+                        {p.codigo_barras && (
+                          <p className="text-xs text-slate-400 mt-0.5 font-mono">{p.codigo_barras}</p>
                         )}
                       </td>
-
-                      {/* Categoría */}
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
                           {p.categorias?.nombre ?? '—'}
                         </span>
                       </td>
-
-                      {/* Precio venta */}
                       <td className="px-5 py-4 font-medium text-slate-800 whitespace-nowrap">
                         {ARS(p.precio_venta)}
                       </td>
-
-                      {/* Stock */}
                       <td className="px-5 py-4 whitespace-nowrap">
                         {stockBajo ? (
                           <div className="flex items-center gap-1.5">
@@ -317,23 +335,15 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                           <span className="font-medium text-slate-700">{p.stock_actual}</span>
                         )}
                       </td>
-
-                      {/* Unidad */}
                       <td className="px-5 py-4 text-slate-500 capitalize">{p.unidad}</td>
-
-                      {/* Estado */}
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          p.activo
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
+                          p.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${p.activo ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                           {p.activo ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-
-                      {/* Acciones */}
                       <td className="px-5 py-4">
                         {puedeEditar && (
                           <button
@@ -357,7 +367,65 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
         )}
       </div>
 
-      {/* Modal (solo si puede editar) */}
+      {/* Paginación */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-slate-400">
+            Página {page} de {totalPages.toLocaleString('es-AR')}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate({ p: page - 1 })}
+              disabled={page <= 1 || isPending}
+              className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Anterior
+            </button>
+
+            {/* Números de página (máx 5 visibles) */}
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let p: number
+                if (totalPages <= 5) {
+                  p = i + 1
+                } else if (page <= 3) {
+                  p = i + 1
+                } else if (page >= totalPages - 2) {
+                  p = totalPages - 4 + i
+                } else {
+                  p = page - 2 + i
+                }
+                return (
+                  <button
+                    key={p}
+                    onClick={() => navigate({ p })}
+                    disabled={isPending}
+                    className={`w-9 h-9 text-sm font-medium rounded-lg transition-colors ${
+                      p === page
+                        ? 'bg-blue-600 text-white'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              })}
+            </div>
+
+            <button
+              onClick={() => navigate({ p: page + 1 })}
+              disabled={page >= totalPages || isPending}
+              className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal crear/editar */}
       {modalAbierto && puedeEditar && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
@@ -365,30 +433,22 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
         >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
 
-            {/* Modal header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
               <h2 className="text-base font-semibold text-slate-900">
                 {productoEditando ? 'Editar producto' : 'Nuevo producto'}
               </h2>
-              <button
-                onClick={cerrarModal}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
-              >
+              <button onClick={cerrarModal} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="overflow-y-auto">
+            <form id="form-producto" onSubmit={handleSubmit} className="overflow-y-auto">
               <div className="px-6 py-5 space-y-4">
 
-                {/* Nombre */}
                 <div>
-                  <label className={label}>Nombre *</label>
+                  <label htmlFor="p-nombre" className={label}>Nombre *</label>
                   <input
-                    type="text"
-                    required
-                    minLength={2}
+                    id="p-nombre" name="p-nombre" type="text" required minLength={2}
                     placeholder="Ej: Lapicera azul"
                     value={form.nombre}
                     onChange={(e) => setForm({ ...form, nombre: e.target.value })}
@@ -396,11 +456,10 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                   />
                 </div>
 
-                {/* Descripción */}
                 <div>
-                  <label className={label}>Descripción</label>
+                  <label htmlFor="p-descripcion" className={label}>Descripción</label>
                   <input
-                    type="text"
+                    id="p-descripcion" name="p-descripcion" type="text"
                     placeholder="Descripción breve (opcional)"
                     value={form.descripcion}
                     onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
@@ -408,11 +467,11 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                   />
                 </div>
 
-                {/* Categoría + Unidad */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className={label}>Categoría</label>
+                    <label htmlFor="p-categoria" className={label}>Categoría</label>
                     <select
+                      id="p-categoria" name="p-categoria"
                       value={form.categoria_id}
                       onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}
                       className={input}
@@ -424,13 +483,11 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                     </select>
                   </div>
                   <div>
-                    <label className={label}>Unidad de medida *</label>
+                    <label htmlFor="p-unidad" className={label}>Unidad de medida *</label>
                     <select
-                      required
+                      id="p-unidad" name="p-unidad" required
                       value={form.unidad}
-                      onChange={(e) =>
-                        setForm({ ...form, unidad: e.target.value as FormValues['unidad'] })
-                      }
+                      onChange={(e) => setForm({ ...form, unidad: e.target.value as FormValues['unidad'] })}
                       className={input}
                     >
                       {UNIDADES.map((u) => (
@@ -440,29 +497,20 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                   </div>
                 </div>
 
-                {/* Precio costo + Precio venta */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className={label}>Precio costo *</label>
+                    <label htmlFor="p-costo" className={label}>Precio costo *</label>
                     <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
-                      placeholder="0"
+                      id="p-costo" name="p-costo" type="number" required min="0" step="0.01" placeholder="0"
                       value={form.precio_costo}
                       onChange={(e) => setForm({ ...form, precio_costo: e.target.value })}
                       className={input}
                     />
                   </div>
                   <div>
-                    <label className={label}>Precio venta *</label>
+                    <label htmlFor="p-venta" className={label}>Precio venta *</label>
                     <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
-                      placeholder="0"
+                      id="p-venta" name="p-venta" type="number" required min="0" step="0.01" placeholder="0"
                       value={form.precio_venta}
                       onChange={(e) => setForm({ ...form, precio_venta: e.target.value })}
                       className={input}
@@ -470,27 +518,20 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                   </div>
                 </div>
 
-                {/* Stock actual + Stock mínimo */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className={label}>Stock actual *</label>
+                    <label htmlFor="p-stock" className={label}>Stock actual *</label>
                     <input
-                      type="number"
-                      required
-                      min="0"
-                      step="1"
+                      id="p-stock" name="p-stock" type="number" required min="0" step="1"
                       value={form.stock_actual}
                       onChange={(e) => setForm({ ...form, stock_actual: e.target.value })}
                       className={input}
                     />
                   </div>
                   <div>
-                    <label className={label}>Stock mínimo *</label>
+                    <label htmlFor="p-stock-min" className={label}>Stock mínimo *</label>
                     <input
-                      type="number"
-                      required
-                      min="0"
-                      step="1"
+                      id="p-stock-min" name="p-stock-min" type="number" required min="0" step="1"
                       value={form.stock_minimo}
                       onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
                       className={input}
@@ -498,24 +539,19 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                   </div>
                 </div>
 
-                {/* Código de barras */}
                 <div>
-                  <label className={label}>Código de barras</label>
+                  <label htmlFor="p-barras" className={label}>Código de barras</label>
                   <input
-                    type="text"
-                    placeholder="Opcional"
+                    id="p-barras" name="p-barras" type="text" placeholder="Opcional"
                     value={form.codigo_barras}
                     onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
                     className={input}
                   />
                 </div>
 
-                {/* Permitir venta sin stock */}
                 <div
                   className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-colors cursor-pointer ${
-                    form.permitir_venta_sin_stock
-                      ? 'border-blue-200 bg-blue-50'
-                      : 'border-slate-200 bg-slate-50'
+                    form.permitir_venta_sin_stock ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50'
                   }`}
                   onClick={() => setForm({ ...form, permitir_venta_sin_stock: !form.permitir_venta_sin_stock })}
                 >
@@ -527,7 +563,6 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                         : 'El producto se bloquea en el POS cuando el stock llega a 0'}
                     </p>
                   </div>
-                  {/* Toggle switch */}
                   <div className={`relative shrink-0 ml-4 w-11 h-6 rounded-full transition-colors ${
                     form.permitir_venta_sin_stock ? 'bg-blue-500' : 'bg-slate-300'
                   }`}>
@@ -537,7 +572,6 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                   </div>
                 </div>
 
-                {/* Error */}
                 {error && (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
                     <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -546,25 +580,18 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
                 )}
               </div>
 
-              {/* Footer con botones */}
               <div className="flex gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
                 <button
-                  type="button"
-                  onClick={cerrarModal}
+                  type="button" onClick={cerrarModal}
                   className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  disabled={guardando}
+                  type="submit" disabled={guardando}
                   className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg transition-colors"
                 >
-                  {guardando
-                    ? 'Guardando...'
-                    : productoEditando
-                    ? 'Guardar cambios'
-                    : 'Crear producto'}
+                  {guardando ? 'Guardando...' : productoEditando ? 'Guardar cambios' : 'Crear producto'}
                 </button>
               </div>
             </form>
@@ -572,7 +599,7 @@ export default function ProductosCliente({ initialProductos, categorias, puedeEd
         </div>
       )}
 
-      {/* Modal importar productos */}
+      {/* Modal importar */}
       {modalImportar && (
         <ImportarModal
           onClose={() => setModalImportar(false)}
