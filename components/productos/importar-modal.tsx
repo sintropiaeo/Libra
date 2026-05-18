@@ -1,65 +1,72 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
-import { read as xlsxRead, utils as xlsxUtils } from 'xlsx'
-import { X, Upload, FileSpreadsheet, ArrowRight, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
-import { importarLoteProductos, type ProductoImport } from '@/app/(dashboard)/productos/actions'
+import { read as xlsxRead, utils as xlsxUtils, writeFile as xlsxWriteFile } from 'xlsx'
+import {
+  X, Upload, FileSpreadsheet, ArrowRight,
+  CheckCircle, AlertTriangle, Loader2, Download,
+} from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type Step = 'upload' | 'mapeo' | 'preview' | 'importando' | 'resultado'
 
 type CampoDestino =
-  | 'nombre'
-  | 'descripcion'
-  | 'precio_costo'
-  | 'precio_venta'
-  | 'stock_actual'
-  | 'stock_minimo'
-  | 'codigo_barras'
-  | 'unidad'
-  | 'categoria_nombre'
-  | ''
+  | 'nombre' | 'descripcion' | 'precio_costo' | 'precio_venta'
+  | 'stock_actual' | 'stock_minimo' | 'codigo_barras' | 'unidad'
+  | 'categoria_nombre' | ''
 
-interface ColMapping {
-  origen: string   // columna del archivo
-  destino: CampoDestino
+interface ColMapping { origen: string; destino: CampoDestino }
+
+interface ProductoImport {
+  nombre:           string
+  descripcion?:     string | null
+  precio_costo?:    number
+  precio_venta?:    number
+  stock_actual?:    number
+  stock_minimo?:    number
+  codigo_barras?:   string | null
+  unidad?:          string
+  categoria_nombre?: string | null
 }
 
-const CAMPOS_DESTINO: { value: CampoDestino; label: string; required?: boolean }[] = [
-  { value: 'nombre',          label: 'Nombre',           required: true },
-  { value: 'descripcion',     label: 'Descripción'   },
-  { value: 'precio_costo',    label: 'Precio costo'  },
-  { value: 'precio_venta',    label: 'Precio venta'  },
-  { value: 'stock_actual',    label: 'Stock actual'  },
-  { value: 'stock_minimo',    label: 'Stock mínimo'  },
-  { value: 'codigo_barras',   label: 'Código barras' },
-  { value: 'unidad',          label: 'Unidad'        },
-  { value: 'categoria_nombre',label: 'Categoría'     },
-]
+interface FilaFallida extends ProductoImport { _error: string }
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const BATCH_SIZE = 500
+
+const CAMPOS_DESTINO: { value: CampoDestino; label: string; required?: boolean }[] = [
+  { value: 'nombre',           label: 'Nombre',        required: true },
+  { value: 'descripcion',      label: 'Descripción'   },
+  { value: 'precio_costo',     label: 'Precio costo'  },
+  { value: 'precio_venta',     label: 'Precio venta'  },
+  { value: 'stock_actual',     label: 'Stock actual'  },
+  { value: 'stock_minimo',     label: 'Stock mínimo'  },
+  { value: 'codigo_barras',    label: 'Código barras' },
+  { value: 'unidad',           label: 'Unidad'        },
+  { value: 'categoria_nombre', label: 'Categoría'     },
+]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toNum(v: unknown): number {
   if (typeof v === 'number') return isNaN(v) ? 0 : v
   const s = String(v ?? '').trim()
-    .replace(/[$ ]/g, '')        // quitar símbolo $ y espacios
-    .replace(/\./g, '')          // quitar separadores de miles (1.500 → 1500)
-    .replace(',', '.')           // coma decimal → punto (1500,50 → 1500.50)
+    .replace(/[$ ]/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
   const n = Number(s)
   return isNaN(n) ? 0 : n
 }
 
-function toStr(v: unknown): string {
-  return String(v ?? '').trim()
-}
+function toStr(v: unknown): string { return String(v ?? '').trim() }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function ImportarModal({ onClose, onSuccess }: {
-  onClose: () => void
+  onClose:   () => void
   onSuccess: () => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -68,11 +75,11 @@ export default function ImportarModal({ onClose, onSuccess }: {
   const [columnas, setColumnas]       = useState<string[]>([])
   const [filas, setFilas]             = useState<Record<string, unknown>[]>([])
   const [mapeo, setMapeo]             = useState<ColMapping[]>([])
-  const [onDuplicate, setOnDuplicate] = useState<'actualizar' | 'saltar'>('saltar')
+  const [onDuplicate, setOnDuplicate] = useState<'actualizar' | 'saltar'>('actualizar')
   const [progreso, setProgreso]       = useState(0)
-  const [resultado, setResultado]     = useState<{
-    insertados: number; actualizados: number; saltados: number
-  } | null>(null)
+  const [progresoTexto, setProgresoTexto] = useState('')
+  const [resultado, setResultado]     = useState<{ importados: number; fallidos: number } | null>(null)
+  const [filasFallidas, setFilasFallidas] = useState<FilaFallida[]>([])
   const [errorMsg, setErrorMsg]       = useState<string | null>(null)
   const [dragOver, setDragOver]       = useState(false)
 
@@ -80,22 +87,17 @@ export default function ImportarModal({ onClose, onSuccess }: {
 
   const procesarArchivo = useCallback((file: File) => {
     setErrorMsg(null)
-
-    if (file.size > 25 * 1024 * 1024) {
-      setErrorMsg('El archivo no puede superar 25 MB.')
+    if (file.size > 50 * 1024 * 1024) {
+      setErrorMsg('El archivo no puede superar 50 MB.')
       return
     }
-
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const data   = new Uint8Array(e.target!.result as ArrayBuffer)
-        const wb     = xlsxRead(data, { type: 'array' })
-        const ws     = wb.Sheets[wb.SheetNames[0]]
-        const json   = xlsxUtils.sheet_to_json<Record<string, unknown>>(ws, {
-          defval: '',
-          raw: true,     // números como JS number, no como string formateado
-        })
+        const data = new Uint8Array(e.target!.result as ArrayBuffer)
+        const wb   = xlsxRead(data, { type: 'array' })
+        const ws   = wb.Sheets[wb.SheetNames[0]]
+        const json = xlsxUtils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: true })
 
         if (json.length === 0) { setErrorMsg('El archivo no tiene datos.'); return }
 
@@ -104,19 +106,18 @@ export default function ImportarModal({ onClose, onSuccess }: {
         setFilas(json)
         setFileName(file.name)
 
-        // Auto-mapeo inteligente por nombre de columna
         const autoMapeo: ColMapping[] = cols.map((col) => {
           const c = col.toLowerCase().replace(/[\s_-]/g, '')
           let destino: CampoDestino = ''
-          if (c.includes('nombre'))        destino = 'nombre'
-          else if (c.includes('desc'))     destino = 'descripcion'
-          else if (c.includes('costo'))    destino = 'precio_costo'
-          else if (c.includes('venta'))    destino = 'precio_venta'
-          else if (c.includes('stockact') || c === 'stock') destino = 'stock_actual'
-          else if (c.includes('stockmin') || c.includes('minimo')) destino = 'stock_minimo'
-          else if (c.includes('codigo') || c.includes('barras') || c.includes('ean')) destino = 'codigo_barras'
-          else if (c.includes('unidad'))   destino = 'unidad'
-          else if (c.includes('categ'))    destino = 'categoria_nombre'
+          if      (c.includes('nombre'))                                   destino = 'nombre'
+          else if (c.includes('desc'))                                     destino = 'descripcion'
+          else if (c.includes('costo'))                                    destino = 'precio_costo'
+          else if (c.includes('venta'))                                    destino = 'precio_venta'
+          else if (c.includes('stockact') || c === 'stock')               destino = 'stock_actual'
+          else if (c.includes('stockmin') || c.includes('minimo'))        destino = 'stock_minimo'
+          else if (c.includes('codigo') || c.includes('barras') || c.includes('ean') || c.includes('sku')) destino = 'codigo_barras'
+          else if (c.includes('unidad'))                                   destino = 'unidad'
+          else if (c.includes('categ'))                                    destino = 'categoria_nombre'
           return { origen: col, destino }
         })
         setMapeo(autoMapeo)
@@ -140,63 +141,143 @@ export default function ImportarModal({ onClose, onSuccess }: {
     if (file) procesarArchivo(file)
   }
 
-  // ─── Preview ───────────────────────────────────────────────────────────────
+  // ─── Convertir fila → producto ─────────────────────────────────────────────
 
   function filaAProducto(fila: Record<string, unknown>): ProductoImport {
-    const get = (destino: CampoDestino) => {
-      const col = mapeo.find((m) => m.destino === destino)?.origen
+    const get = (d: CampoDestino) => {
+      const col = mapeo.find((m) => m.destino === d)?.origen
       return col ? fila[col] : undefined
     }
     return {
-      nombre:          toStr(get('nombre')),
-      descripcion:     toStr(get('descripcion')) || null,
-      precio_costo:    toNum(get('precio_costo')),
-      precio_venta:    toNum(get('precio_venta')),
-      stock_actual:    toNum(get('stock_actual')),
-      stock_minimo:    toNum(get('stock_minimo')),
-      codigo_barras:   toStr(get('codigo_barras')) || null,
-      unidad:          toStr(get('unidad')) || 'unidad',
-      categoria_nombre:toStr(get('categoria_nombre')) || null,
+      nombre:           toStr(get('nombre')),
+      descripcion:      toStr(get('descripcion')) || null,
+      precio_costo:     toNum(get('precio_costo')),
+      precio_venta:     toNum(get('precio_venta')),
+      stock_actual:     toNum(get('stock_actual')),
+      stock_minimo:     toNum(get('stock_minimo')),
+      codigo_barras:    toStr(get('codigo_barras')) || null,
+      unidad:           toStr(get('unidad')) || 'unidad',
+      categoria_nombre: toStr(get('categoria_nombre')) || null,
     }
   }
 
-  const preview = filas.slice(0, 10).map(filaAProducto)
+  const preview       = filas.slice(0, 10).map(filaAProducto)
   const nombreMapeado = mapeo.some((m) => m.destino === 'nombre')
 
-  // ─── Importar ──────────────────────────────────────────────────────────────
+  // ─── Importar (directo a Supabase, sin server action) ──────────────────────
 
   async function iniciarImportacion() {
     setStep('importando')
     setProgreso(0)
+    setProgresoTexto('Preparando...')
     setErrorMsg(null)
 
+    const supabase = createClient()
+
+    // Resolver todas las categorías de una sola vez
     const productos = filas.map(filaAProducto).filter((p) => p.nombre.trim())
-    const total     = productos.length
-    let insertados  = 0
-    let actualizados = 0
-    let saltados    = 0
-    let procesados  = 0
+    const total = productos.length
 
-    for (let i = 0; i < productos.length; i += BATCH_SIZE) {
-      const batch = productos.slice(i, i + BATCH_SIZE)
-      const res   = await importarLoteProductos(batch, onDuplicate)
+    const nombresCategoria = Array.from(new Set(
+      productos.map((p) => p.categoria_nombre).filter(Boolean) as string[]
+    ))
+    const categoriaMap: Record<string, string> = {}
+    if (nombresCategoria.length > 0) {
+      const { data: cats } = await supabase
+        .from('categorias')
+        .select('id, nombre')
+        .in('nombre', nombresCategoria)
+      for (const c of cats ?? []) categoriaMap[c.nombre] = c.id
+    }
 
-      if (res.error) {
-        setErrorMsg(`Error en lote ${Math.floor(i / BATCH_SIZE) + 1}: ${res.error}`)
-        setStep('preview')
-        return
+    let totalImportados = 0
+    const fallidos: FilaFallida[] = []
+    let procesados = 0
+
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const batch    = productos.slice(i, i + BATCH_SIZE)
+      const loteNum  = Math.floor(i / BATCH_SIZE) + 1
+      const lotesTot = Math.ceil(total / BATCH_SIZE)
+
+      setProgresoTexto(
+        `Lote ${loteNum} de ${lotesTot} · cargando ${Math.min(i + BATCH_SIZE, total).toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} productos`
+      )
+
+      // Construir filas DB
+      const dbRows = batch.map((p) => ({
+        nombre:                   p.nombre.trim(),
+        descripcion:              p.descripcion?.trim() || null,
+        categoria_id:             (p.categoria_nombre && categoriaMap[p.categoria_nombre]) || null,
+        precio_costo:             p.precio_costo  ?? 0,
+        precio_venta:             p.precio_venta  ?? 0,
+        stock_actual:             p.stock_actual  ?? 0,
+        stock_minimo:             p.stock_minimo  ?? 5,
+        codigo_barras:            p.codigo_barras?.trim() || null,
+        unidad:                   (['unidad','pack','resma','metro'].includes(p.unidad ?? '') ? p.unidad : 'unidad') as string,
+        activo:                   true,
+        permitir_venta_sin_stock: true,
+      }))
+
+      // Separar por código de barras (upsert vs insert)
+      const conBarras  = dbRows.filter((r) => r.codigo_barras)
+      const sinBarras  = dbRows.filter((r) => !r.codigo_barras)
+      const batchCon   = batch.filter((p) => p.codigo_barras?.trim())
+      const batchSin   = batch.filter((p) => !p.codigo_barras?.trim())
+
+      // Upsert de los que tienen código de barras
+      if (conBarras.length > 0) {
+        const { error } = await supabase
+          .from('productos')
+          .upsert(conBarras, {
+            onConflict:       'codigo_barras',
+            ignoreDuplicates: onDuplicate === 'saltar',
+          })
+        if (error) {
+          batchCon.forEach((p) => fallidos.push({ ...p, _error: error.message }))
+        } else {
+          totalImportados += conBarras.length
+        }
       }
 
-      insertados  += res.insertados
-      actualizados += res.actualizados
-      saltados    += res.saltados
-      procesados  += batch.length
+      // Insert de los que NO tienen código de barras
+      if (sinBarras.length > 0) {
+        const { error } = await supabase.from('productos').insert(sinBarras)
+        if (error) {
+          batchSin.forEach((p) => fallidos.push({ ...p, _error: error.message }))
+        } else {
+          totalImportados += sinBarras.length
+        }
+      }
+
+      procesados += batch.length
       setProgreso(Math.round((procesados / total) * 100))
     }
 
-    setResultado({ insertados, actualizados, saltados })
+    setFilasFallidas(fallidos)
+    setResultado({ importados: totalImportados, fallidos: fallidos.length })
     setStep('resultado')
     onSuccess()
+  }
+
+  // ─── Descargar fallidos ────────────────────────────────────────────────────
+
+  function descargarFallidos() {
+    const data = filasFallidas.map(({ _error, ...p }) => ({
+      nombre:        p.nombre,
+      descripcion:   p.descripcion ?? '',
+      precio_costo:  p.precio_costo ?? 0,
+      precio_venta:  p.precio_venta ?? 0,
+      stock_actual:  p.stock_actual ?? 0,
+      stock_minimo:  p.stock_minimo ?? 0,
+      codigo_barras: p.codigo_barras ?? '',
+      unidad:        p.unidad ?? '',
+      categoria:     p.categoria_nombre ?? '',
+      error:         _error,
+    }))
+    const ws = xlsxUtils.json_to_sheet(data)
+    const wb = xlsxUtils.book_new()
+    xlsxUtils.book_append_sheet(wb, ws, 'Fallidos')
+    xlsxWriteFile(wb, 'productos_fallidos.xlsx')
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -230,23 +311,23 @@ export default function ImportarModal({ onClose, onSuccess }: {
         {step !== 'resultado' && step !== 'importando' && (
           <div className="px-6 pt-4 shrink-0">
             <div className="flex items-center gap-2 text-xs">
-              {(['upload', 'mapeo', 'preview'] as const).map((s, i) => (
-                <div key={s} className="flex items-center gap-2">
-                  {i > 0 && <div className="w-8 h-px bg-slate-200" />}
-                  <div className={`flex items-center gap-1.5 ${
-                    step === s ? 'text-blue-600 font-semibold' :
-                    (['upload', 'mapeo'].indexOf(s) < ['upload', 'mapeo', 'preview'].indexOf(step))
-                      ? 'text-emerald-600' : 'text-slate-400'
-                  }`}>
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      step === s ? 'bg-blue-100 text-blue-600' :
-                      (['upload', 'mapeo'].indexOf(s) < ['upload', 'mapeo', 'preview'].indexOf(step))
-                        ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'
-                    }`}>{i + 1}</span>
-                    {s === 'upload' ? 'Subir archivo' : s === 'mapeo' ? 'Mapear columnas' : 'Vista previa'}
+              {(['upload', 'mapeo', 'preview'] as const).map((s, i) => {
+                const pasos = ['upload', 'mapeo', 'preview'] as const
+                const idx   = pasos.indexOf(step)
+                const isActive = step === s
+                const isDone   = pasos.indexOf(s) < idx
+                return (
+                  <div key={s} className="flex items-center gap-2">
+                    {i > 0 && <div className="w-8 h-px bg-slate-200" />}
+                    <div className={`flex items-center gap-1.5 ${isActive ? 'text-blue-600 font-semibold' : isDone ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-blue-100 text-blue-600' : isDone ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                        {i + 1}
+                      </span>
+                      {s === 'upload' ? 'Subir archivo' : s === 'mapeo' ? 'Mapear columnas' : 'Vista previa'}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -271,7 +352,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
                   Arrastrá el archivo o hacé clic para seleccionar
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  .xlsx, .xls o .csv · máximo 25 MB · hasta 25.000 filas
+                  .xlsx, .xls o .csv · máximo 50 MB · sin límite de filas
                 </p>
                 <input
                   ref={fileInputRef}
@@ -288,9 +369,9 @@ export default function ImportarModal({ onClose, onSuccess }: {
                 </div>
               )}
               <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-xs text-blue-700 space-y-1">
-                <p className="font-semibold">Formato esperado del archivo:</p>
-                <p>La primera fila debe ser el encabezado con los nombres de columnas.</p>
-                <p>Columnas sugeridas: <span className="font-mono">nombre, precio_venta, precio_costo, stock_actual, codigo_barras, unidad</span></p>
+                <p className="font-semibold">Formato esperado:</p>
+                <p>Primera fila = encabezados. Columnas sugeridas:</p>
+                <p className="font-mono">nombre, precio_venta, precio_costo, stock_actual, codigo_barras, unidad</p>
               </div>
             </div>
           )}
@@ -300,40 +381,32 @@ export default function ImportarModal({ onClose, onSuccess }: {
             <div className="space-y-5">
               <p className="text-sm text-slate-600">
                 El archivo tiene <strong>{filas.length.toLocaleString('es-AR')}</strong> filas y {columnas.length} columnas.
-                Asigná cada columna del archivo al campo correspondiente.
+                Asigná cada columna al campo correspondiente.
               </p>
-
               <div className="space-y-2">
                 {columnas.map((col) => {
                   const m = mapeo.find((x) => x.origen === col)!
                   return (
                     <div key={col} className="flex items-center gap-3">
-                      <div className="flex-1 px-3 py-2 bg-slate-100 rounded-lg text-sm font-mono text-slate-700 truncate">
-                        {col}
-                      </div>
+                      <div className="flex-1 px-3 py-2 bg-slate-100 rounded-lg text-sm font-mono text-slate-700 truncate">{col}</div>
                       <ArrowRight className="w-4 h-4 text-slate-300 shrink-0" />
                       <select
                         value={m.destino}
                         onChange={(e) => {
                           const nuevoDestino = e.target.value as CampoDestino
-                          setMapeo((prev) => prev.map((x) =>
-                            x.origen === col ? { ...x, destino: nuevoDestino } : x
-                          ))
+                          setMapeo((prev) => prev.map((x) => x.origen === col ? { ...x, destino: nuevoDestino } : x))
                         }}
                         className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">— Ignorar columna —</option>
                         {CAMPOS_DESTINO.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}{c.required ? ' *' : ''}
-                          </option>
+                          <option key={c.value} value={c.value}>{c.label}{c.required ? ' *' : ''}</option>
                         ))}
                       </select>
                     </div>
                   )
                 })}
               </div>
-
               {!nombreMapeado && (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 text-sm px-4 py-3 rounded-lg">
                   <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -346,25 +419,18 @@ export default function ImportarModal({ onClose, onSuccess }: {
           {/* ── STEP: Preview ── */}
           {step === 'preview' && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-600">
-                  Mostrando los primeros {preview.length} de{' '}
-                  <strong>{filas.length.toLocaleString('es-AR')}</strong> productos.
-                </p>
-              </div>
-
-              {/* Tabla preview */}
+              <p className="text-sm text-slate-600">
+                Primeros {preview.length} de <strong>{filas.length.toLocaleString('es-AR')}</strong> productos.
+              </p>
               <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      {(['nombre', 'precio_venta', 'precio_costo', 'stock_actual', 'codigo_barras', 'unidad'] as CampoDestino[]).map((f) => {
-                        const label = CAMPOS_DESTINO.find(c => c.value === f)?.label ?? f
+                      {(['nombre','precio_venta','precio_costo','stock_actual','codigo_barras','unidad'] as CampoDestino[]).map((f) => {
+                        const label   = CAMPOS_DESTINO.find(c => c.value === f)?.label ?? f
                         const mapeado = mapeo.some(m => m.destino === f)
                         return mapeado ? (
-                          <th key={f} className="px-3 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide">
-                            {label}
-                          </th>
+                          <th key={f} className="px-3 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">{label}</th>
                         ) : null
                       })}
                     </tr>
@@ -402,7 +468,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
                   ¿Qué hacer si ya existe un producto con el mismo código de barras?
                 </p>
                 <div className="flex gap-4">
-                  {(['saltar', 'actualizar'] as const).map((opt) => (
+                  {(['actualizar', 'saltar'] as const).map((opt) => (
                     <label key={opt} className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border cursor-pointer transition-colors ${
                       onDuplicate === opt
                         ? 'border-blue-400 bg-blue-50 text-blue-700'
@@ -442,51 +508,90 @@ export default function ImportarModal({ onClose, onSuccess }: {
               <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
               <div>
                 <p className="text-base font-semibold text-slate-800">Importando productos...</p>
-                <p className="text-sm text-slate-400 mt-1">
-                  {progreso}% completado · no cerrés esta ventana
-                </p>
+                <p className="text-sm text-slate-400 mt-1 max-w-xs">{progresoTexto}</p>
               </div>
-              <div className="w-full max-w-sm bg-slate-100 rounded-full h-3 overflow-hidden">
-                <div
-                  className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${progreso}%` }}
-                />
+              <div className="w-full max-w-sm space-y-1.5">
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>{progreso}%</span>
+                  <span>{Math.ceil(filas.length / BATCH_SIZE)} lotes de {BATCH_SIZE}</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                    style={{ width: `${progreso}%` }}
+                  />
+                </div>
               </div>
-              <p className="text-xs text-slate-400">
-                Procesando en lotes de {BATCH_SIZE} · {Math.ceil(filas.length / BATCH_SIZE)} lote{Math.ceil(filas.length / BATCH_SIZE) !== 1 ? 's' : ''} total
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 px-4 py-2 rounded-lg">
+                No cerrés esta ventana mientras se importa
               </p>
             </div>
           )}
 
           {/* ── STEP: Resultado ── */}
           {step === 'resultado' && resultado && (
-            <div className="flex flex-col items-center justify-center py-8 text-center space-y-5">
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-8 h-8 text-emerald-600" />
+            <div className="flex flex-col items-center py-6 text-center space-y-5">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                resultado.fallidos === 0 ? 'bg-emerald-100' : 'bg-amber-100'
+              }`}>
+                {resultado.fallidos === 0
+                  ? <CheckCircle className="w-8 h-8 text-emerald-600" />
+                  : <AlertTriangle className="w-8 h-8 text-amber-600" />
+                }
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900">¡Importación completada!</h3>
-                <p className="text-sm text-slate-500 mt-1">Procesados {filas.length.toLocaleString('es-AR')} registros</p>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {resultado.fallidos === 0 ? '¡Importación completada!' : 'Importación con errores parciales'}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {filas.length.toLocaleString('es-AR')} registros procesados
+                </p>
               </div>
-              <div className="grid grid-cols-3 gap-4 w-full max-w-xs">
-                <div className="bg-emerald-50 rounded-xl p-3">
-                  <p className="text-2xl font-bold text-emerald-600">{resultado.insertados}</p>
-                  <p className="text-xs text-emerald-700 mt-0.5">nuevos</p>
+              <div className="grid grid-cols-2 gap-4 w-full max-w-xs">
+                <div className="bg-emerald-50 rounded-xl p-4">
+                  <p className="text-3xl font-bold text-emerald-600">{resultado.importados.toLocaleString('es-AR')}</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">importados</p>
                 </div>
-                <div className="bg-blue-50 rounded-xl p-3">
-                  <p className="text-2xl font-bold text-blue-600">{resultado.actualizados}</p>
-                  <p className="text-xs text-blue-700 mt-0.5">actualizados</p>
-                </div>
-                <div className="bg-slate-100 rounded-xl p-3">
-                  <p className="text-2xl font-bold text-slate-500">{resultado.saltados}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">saltados</p>
+                <div className={`rounded-xl p-4 ${resultado.fallidos > 0 ? 'bg-red-50' : 'bg-slate-100'}`}>
+                  <p className={`text-3xl font-bold ${resultado.fallidos > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                    {resultado.fallidos.toLocaleString('es-AR')}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${resultado.fallidos > 0 ? 'text-red-700' : 'text-slate-500'}`}>fallidos</p>
                 </div>
               </div>
+
+              {filasFallidas.length > 0 && (
+                <div className="w-full space-y-3">
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-left space-y-2">
+                    <p className="text-sm font-semibold text-red-800">
+                      {filasFallidas.length} productos no se pudieron importar
+                    </p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {filasFallidas.slice(0, 5).map((f, i) => (
+                        <p key={i} className="text-xs text-red-700 truncate">
+                          <span className="font-mono font-semibold">{f.nombre || '(sin nombre)'}</span>
+                          {' — '}{f._error}
+                        </p>
+                      ))}
+                      {filasFallidas.length > 5 && (
+                        <p className="text-xs text-red-500">... y {filasFallidas.length - 5} más</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={descargarFallidos}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descargar productos fallidos (.xlsx)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Footer con botones */}
+        {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-100 flex justify-between items-center shrink-0">
           {step === 'upload' && (
             <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
@@ -495,10 +600,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
           )}
           {step === 'mapeo' && (
             <>
-              <button
-                onClick={() => setStep('upload')}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              >
+              <button onClick={() => setStep('upload')} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
                 ← Volver
               </button>
               <button
@@ -512,10 +614,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
           )}
           {step === 'preview' && (
             <>
-              <button
-                onClick={() => setStep('mapeo')}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              >
+              <button onClick={() => setStep('mapeo')} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
                 ← Volver
               </button>
               <button
