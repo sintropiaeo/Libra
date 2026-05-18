@@ -12,18 +12,28 @@ export default async function NuevaVentaPage() {
   const hoyLocal    = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
   const hoyStartUTC = new Date(`${hoyLocal}T03:00:00.000Z`)
 
-  // Fetch productos, config, arqueo y ventas de hoy en paralelo
-  const [productosRes, configRes, arqueoRes, ventasHoyRes] = await Promise.all([
-    supabase
-      .from('productos')
-      .select(`
-        id, nombre, descripcion,
-        precio_venta, stock_actual, stock_minimo,
-        codigo_barras, unidad, activo, permitir_venta_sin_stock,
-        categorias ( nombre )
-      `)
-      .eq('activo', true)
-      .order('nombre'),
+  // IDs de categorías "Servicios" para el panel de servicios
+  const { data: catServ } = await supabase
+    .from('categorias')
+    .select('id')
+    .ilike('nombre', 'servicio%')
+  const catIds = catServ?.map((c) => c.id) ?? []
+
+  // Fetch en paralelo: servicios, config, arqueo y ventas de hoy
+  const [serviciosRes, configRes, arqueoRes, ventasHoyRes] = await Promise.all([
+    catIds.length > 0
+      ? supabase
+          .from('productos')
+          .select(`
+            id, nombre, descripcion,
+            precio_venta, stock_actual, stock_minimo,
+            codigo_barras, unidad, permitir_venta_sin_stock,
+            categorias ( nombre )
+          `)
+          .eq('activo', true)
+          .in('categoria_id', catIds)
+          .order('nombre')
+      : Promise.resolve({ data: [] }),
     supabase
       .from('negocio_config')
       .select('nombre, metodos_pago, imprimir_ticket_auto, tamano_ticket, sonido_escaneo')
@@ -82,7 +92,7 @@ export default async function NuevaVentaPage() {
   return (
     <PosCliente
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      productos={(productosRes.data as any) ?? []}
+      servicios={(serviciosRes.data as any) ?? []}
       metodosActivos={metodosActivos}
       arqueoAbierto={arqueoAbierto}
       ventasTurnoInicial={ventasTurnoInicial}

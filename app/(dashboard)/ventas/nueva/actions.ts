@@ -5,6 +5,43 @@ import { revalidatePath } from 'next/cache'
 import { tieneAcceso } from '@/lib/permisos'
 import type { Perfil } from '@/lib/permisos'
 
+export type ProductoPOS = {
+  id: string
+  nombre: string
+  descripcion: string | null
+  precio_venta: number
+  stock_actual: number
+  stock_minimo: number
+  codigo_barras: string | null
+  unidad: string
+  permitir_venta_sin_stock: boolean
+  categorias: { nombre: string } | null
+}
+
+export async function buscarProductosPOS(q: string): Promise<ProductoPOS[]> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+  const trimmed = q.trim()
+  if (!trimmed) return []
+
+  const { data } = await supabase
+    .from('productos')
+    .select(`
+      id, nombre, descripcion,
+      precio_venta, stock_actual, stock_minimo,
+      codigo_barras, unidad, permitir_venta_sin_stock,
+      categorias ( nombre )
+    `)
+    .eq('activo', true)
+    .or(`nombre.ilike.%${trimmed}%,codigo_barras.eq.${trimmed}`)
+    .order('nombre')
+    .limit(40)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any) ?? []
+}
+
 type ItemVenta = {
   producto_id: string
   cantidad: number

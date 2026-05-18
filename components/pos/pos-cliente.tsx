@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
@@ -8,23 +8,13 @@ import {
   CreditCard, Clock, Package, Printer, Calculator,
   ChevronDown, ChevronRight,
 } from 'lucide-react'
-import { crearVenta } from '@/app/(dashboard)/ventas/nueva/actions'
+import { crearVenta, buscarProductosPOS } from '@/app/(dashboard)/ventas/nueva/actions'
+import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Producto = {
-  id: string
-  nombre: string
-  descripcion: string | null
-  precio_venta: number
-  stock_actual: number
-  stock_minimo: number
-  codigo_barras: string | null
-  unidad: string
-  permitir_venta_sin_stock: boolean
-  categorias: { nombre: string } | null
-}
+type Producto = ProductoPOS
 
 type CartItem = {
   producto_id: string
@@ -73,7 +63,7 @@ const ARS = (v: number) =>
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function PosCliente({
-  productos,
+  servicios,
   metodosActivos     = ['efectivo', 'transferencia', 'debito', 'credito'],
   arqueoAbierto      = null,
   ventasTurnoInicial = [],
@@ -84,7 +74,7 @@ export default function PosCliente({
   tamanoTicket       = '80mm',
   sonidoEscaneo      = false,
 }: {
-  productos:            Producto[]
+  servicios:            Producto[]
   metodosActivos?:      string[]
   arqueoAbierto?:       ArqueoCaja | null
   ventasTurnoInicial?:  VentaTurno[]
@@ -114,6 +104,12 @@ export default function PosCliente({
   const [ventasHoy,      setVentasHoy]      = useState<VentaHoy[]>(ventasHoyInicial)
   // Error temporal de stock (se auto-descarta)
   const [stockError,     setStockError]     = useState<string | null>(null)
+
+  // Búsqueda dinámica server-side
+  const [resultadosBusqueda, setResultadosBusqueda] = useState<Producto[]>([])
+  const [buscando,           setBuscando]           = useState(false)
+  const debounceSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchVersionRef  = useRef(0)
 
   const cajaAbierta = arqueoAbierto !== null
 
@@ -194,25 +190,7 @@ ${itemsHTML}
     if (activeTab === 'ventas_hoy') searchRef.current?.focus()
   }, [activeTab])
 
-  // ─── Separar productos de servicios ───────────────────────────────────────
-  const servicios = useMemo(
-    () => productos.filter((p) =>
-      p.categorias?.nombre?.toLowerCase().startsWith('servicio')
-    ),
-    [productos]
-  )
-
-  const productosFiltrados = useMemo(() => {
-    const q = busqueda.trim().toLowerCase()
-    if (!q) return productos.slice(0, 40)
-    return productos
-      .filter(
-        (p) =>
-          p.nombre.toLowerCase().includes(q) ||
-          (p.codigo_barras && p.codigo_barras.includes(busqueda.trim()))
-      )
-      .slice(0, 40)
-  }, [productos, busqueda])
+  // servicios viene de props (cargados desde el servidor al inicio)
 
   // ─── Carrito ───────────────────────────────────────────────────────────────
 
@@ -286,21 +264,65 @@ ${itemsHTML}
     const now = Date.now()
     const gap = now - lastInputTimeRef.current
     lastInputTimeRef.current = now
-    if (gap > 200)          isScannerRef.current = false  // typing manual → reset
-    else if (gap > 0 && gap < 50) isScannerRef.current = true   // rapid input → scanner
-    setBusqueda(e.target.value)
+    if (gap > 200)                isScannerRef.current = false
+    else if (gap > 0 && gap < 50) isScannerRef.current = true
+
+    const value = e.target.value
+    setBusqueda(value)
+
+    if (debounceSearchRef.current) clearTimeout(debounceSearchRef.current)
+
+    if (!value.trim()) {
+      setResultadosBusqueda([])
+      setBuscando(false)
+      return
+    }
+
+    setBuscando(true)
+    const version = ++searchVersionRef.current
+    debounceSearchRef.current = setTimeout(async () => {
+      const resultados = await buscarProductosPOS(value)
+      if (version !== searchVersionRef.current) return  // resultado obsoleto
+      setResultadosBusqueda(resultados)
+      setBuscando(false)
+    }, 300)
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && productosFiltrados.length > 0) {
-      e.preventDefault()
-      if (isScannerRef.current && sonidoEscaneo) playBeep()
-      isScannerRef.current = false
-      agregarAlCarrito(productosFiltrados[0])
-    }
+  async function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Escape') {
       setBusqueda('')
+      setResultadosBusqueda([])
+      setBuscando(false)
       isScannerRef.current = false
+      return
+    }
+
+    if (e.key !== 'Enter' || !busqueda.trim()) return
+    e.preventDefault()
+
+    if (resultadosBusqueda.length > 0) {
+      if (isScannerRef.current && sonidoEscaneo) playBeep()
+      isScannerRef.current = false
+      agregarAlCarrito(resultadosBusqueda[0])
+      return
+    }
+
+    // El scanner disparó Enter antes de que llegara el debounce — buscar inmediatamente
+    if (isScannerRef.current || buscando) {
+      if (debounceSearchRef.current) clearTimeout(debounceSearchRef.current)
+      const version = ++searchVersionRef.current
+      isScannerRef.current = false
+      setBuscando(true)
+      const resultados = await buscarProductosPOS(busqueda)
+      if (version !== searchVersionRef.current) return
+      setResultadosBusqueda(resultados)
+      setBuscando(false)
+      if (resultados.length > 0) {
+        if (sonidoEscaneo) playBeep()
+        agregarAlCarrito(resultados[0])
+      } else {
+        mostrarStockError(`Código "${busqueda}" no encontrado`)
+      }
     }
   }
 
@@ -442,7 +464,12 @@ ${itemsHTML}
             {/* Dropdown de resultados */}
             {busqueda.trim() && (
               <div className="absolute left-4 right-4 top-[calc(100%-4px)] bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-30">
-                {productosFiltrados.length === 0 ? (
+                {buscando ? (
+                  <div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-400">
+                    <span className="w-4 h-4 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin shrink-0" />
+                    Buscando...
+                  </div>
+                ) : resultadosBusqueda.length === 0 ? (
                   <div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-400">
                     <Package className="w-4 h-4" />
                     Sin resultados
@@ -450,10 +477,10 @@ ${itemsHTML}
                 ) : (
                   <>
                     <p className="px-4 pt-2.5 pb-1 text-xs text-slate-400 font-medium">
-                      {productosFiltrados.length} resultado{productosFiltrados.length !== 1 && 's'} · Enter para agregar el primero
+                      {resultadosBusqueda.length} resultado{resultadosBusqueda.length !== 1 && 's'} · Enter para agregar el primero
                     </p>
                     <ul className="pb-1.5">
-                      {productosFiltrados.map((p) => (
+                      {resultadosBusqueda.map((p) => (
                         <li key={p.id}>
                           <button
                             onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
