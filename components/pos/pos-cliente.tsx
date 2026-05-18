@@ -11,6 +11,7 @@ import {
 import { crearVenta, buscarProductosPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
+import { conectarQZ, imprimirConQZ } from '@/lib/qztray'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -108,6 +109,9 @@ export default function PosCliente({
   // Error temporal de stock (se auto-descarta)
   const [stockError,     setStockError]     = useState<string | null>(null)
 
+  // QZ Tray: impresión silenciosa sin diálogo del navegador
+  const [qzActivo, setQzActivo] = useState(false)
+
   // Búsqueda dinámica server-side
   const [resultadosBusqueda, setResultadosBusqueda] = useState<Producto[]>([])
   const [buscando,           setBuscando]           = useState(false)
@@ -136,13 +140,13 @@ export default function PosCliente({
     } catch { /* AudioContext no disponible */ }
   }
 
-  const printTicket = useCallback((data: {
+  const generarHTMLTicket = useCallback((data: {
     numeroVenta: number
     items:       CartItem[]
     total:       number
     metodoPago:  string
     vendedor?:   string
-  }) => {
+  }): string => {
     const cfg    = configTicket
     const ancho  = (cfg?.ancho_papel ?? tamanoTicket) as string
     const width  = ancho === '58mm' ? '54mm' : '76mm'
@@ -203,7 +207,7 @@ ${pie}`
       .map(() => `<div class="copia">${ticketBody}</div>`)
       .join('')
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
 .c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
@@ -213,7 +217,26 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
 .copia{page-break-after:always}.copia:last-child{page-break-after:auto}
 @media print{@page{margin:0;size:${ancho} auto}}
 </style></head><body>${copiasHTML}</body></html>`
+  }, [configTicket, tamanoTicket, negocioNombre])
 
+  const printTicket = useCallback(async (data: {
+    numeroVenta: number
+    items:       CartItem[]
+    total:       number
+    metodoPago:  string
+    vendedor?:   string
+  }) => {
+    const html  = generarHTMLTicket(data)
+    const ancho = (configTicket?.ancho_papel ?? tamanoTicket) as '58mm' | '80mm'
+
+    // Intentar QZ Tray primero (impresión silenciosa)
+    if (qzActivo) {
+      const res = await imprimirConQZ(html, ancho)
+      if (res.ok) return
+      // Si QZ falla, cae al fallback con window.print()
+    }
+
+    // Fallback: iframe + diálogo del navegador
     const iframe = document.createElement('iframe')
     iframe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;border:0'
     document.body.appendChild(iframe)
@@ -225,12 +248,17 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
       iframe.contentWindow!.print()
       setTimeout(() => document.body.removeChild(iframe), 1500)
     }, 200)
-  }, [configTicket, tamanoTicket, negocioNombre])
+  }, [generarHTMLTicket, qzActivo, configTicket, tamanoTicket])
 
   // Auto-foco en búsqueda siempre (el input es persistente)
   useEffect(() => {
     if (activeTab === 'ventas_hoy') searchRef.current?.focus()
   }, [activeTab])
+
+  // Intentar conectar a QZ Tray al montar (silencioso; sin bloquear el POS)
+  useEffect(() => {
+    conectarQZ().then(setQzActivo).catch(() => setQzActivo(false))
+  }, [])
 
   // servicios viene de props (cargados desde el servidor al inicio)
 
@@ -425,7 +453,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
     }
     setVentasHoy((prev) => [nuevaVentaHoy, ...prev])
     if (imprimirTicketAuto) {
-      printTicket({ numeroVenta: result.numeroVenta ?? 0, items: cart, total, metodoPago })
+      await printTicket({ numeroVenta: result.numeroVenta ?? 0, items: cart, total, metodoPago })
     }
     setVentaExitosa({ ventaId: result.ventaId!, total })
     setCart([])
@@ -463,6 +491,15 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
               : 'bg-red-100 text-red-600'
           }`}>
             {cajaAbierta ? 'Caja abierta' : 'Caja cerrada'}
+          </span>
+          {/* Indicador QZ Tray */}
+          <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+            qzActivo
+              ? 'bg-violet-100 text-violet-700'
+              : 'bg-slate-100 text-slate-400'
+          }`} title={qzActivo ? 'QZ Tray conectado — impresión silenciosa activa' : 'QZ Tray no detectado — se usará el diálogo del navegador'}>
+            <Printer className="w-3 h-3" />
+            {qzActivo ? 'Impresora' : 'Sin QZ'}
           </span>
         </div>
         <Link
