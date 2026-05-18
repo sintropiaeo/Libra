@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import PosCliente from '@/components/pos/pos-cliente'
 import type { ArqueoCaja, VentaTurno } from '@/components/pos/arqueo-tab'
 import type { VentaHoy } from '@/components/pos/pos-cliente'
+import type { ConfiguracionTicket } from '@/lib/permisos'
 
 export const metadata = { title: 'Punto de Venta — Libra' }
 
@@ -19,8 +20,8 @@ export default async function NuevaVentaPage() {
     .ilike('nombre', 'servicio%')
   const catIds = catServ?.map((c) => c.id) ?? []
 
-  // Fetch en paralelo: servicios, config, arqueo y ventas de hoy
-  const [serviciosRes, configRes, arqueoRes, ventasHoyRes] = await Promise.all([
+  // Fetch en paralelo: servicios, config, arqueo, ventas de hoy y config de tickets
+  const [serviciosRes, configRes, arqueoRes, ventasHoyRes, configTicketRes] = await Promise.all([
     catIds.length > 0
       ? supabase
           .from('productos')
@@ -57,6 +58,11 @@ export default async function NuevaVentaPage() {
       .gte('fecha', hoyStartUTC.toISOString())
       .order('fecha', { ascending: false })
       .limit(100),
+    supabase
+      .from('configuracion_ticket')
+      .select('*')
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const arqueoAbierto = (arqueoRes.data ?? null) as ArqueoCaja | null
@@ -104,6 +110,7 @@ export default async function NuevaVentaPage() {
       imprimirTicketAuto={imprimirTicketAuto}
       tamanoTicket={tamanoTicket}
       sonidoEscaneo={sonidoEscaneo}
+      configTicket={(configTicketRes.data as ConfiguracionTicket | null)}
     />
   )
 }

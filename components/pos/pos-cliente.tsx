@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { crearVenta, buscarProductosPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
+import type { ConfiguracionTicket } from '@/lib/permisos'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ export default function PosCliente({
   imprimirTicketAuto = false,
   tamanoTicket       = '80mm',
   sonidoEscaneo      = false,
+  configTicket       = null,
 }: {
   servicios:            Producto[]
   metodosActivos?:      string[]
@@ -84,6 +86,7 @@ export default function PosCliente({
   imprimirTicketAuto?:  boolean
   tamanoTicket?:        '58mm' | '80mm'
   sonidoEscaneo?:       boolean
+  configTicket?:        ConfiguracionTicket | null
 }) {
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -138,8 +141,13 @@ export default function PosCliente({
     items:       CartItem[]
     total:       number
     metodoPago:  string
+    vendedor?:   string
   }) => {
-    const width = tamanoTicket === '58mm' ? '54mm' : '76mm'
+    const cfg    = configTicket
+    const ancho  = (cfg?.ancho_papel ?? tamanoTicket) as string
+    const width  = ancho === '58mm' ? '54mm' : '76mm'
+    const copias = cfg?.copias_a_imprimir ?? 1
+
     const fecha = new Date().toLocaleString('es-AR', {
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     })
@@ -151,16 +159,36 @@ export default function PosCliente({
       const sub = i.precio_unitario * i.cantidad
       return `<div class="row"><span>${i.cantidad}× ${i.nombre}</span><span>$${sub.toLocaleString('es-AR')}</span></div>`
     }).join('')
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
-.c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
-.sep{border:none;border-top:1px dashed #555;margin:4px 0}
-.row{display:flex;justify-content:space-between;gap:4px;padding:1px 0}
-.row span:first-child{flex:1}
-@media print{@page{margin:0;size:${tamanoTicket} auto}}
-</style></head><body>
-<div class="c b big">${negocioNombre || 'Mi Negocio'}</div>
+
+    const nombreComercio = cfg?.nombre_comercio || negocioNombre || 'Mi Negocio'
+
+    const cabecera = [
+      cfg?.mostrar_logo && cfg?.logo_url
+        ? `<img src="${cfg.logo_url}" style="display:block;max-width:80px;max-height:60px;margin:0 auto 4px;object-fit:contain">`
+        : '',
+      `<div class="c b big">${nombreComercio}</div>`,
+      cfg?.mostrar_cuit && cfg?.cuit
+        ? `<div class="c">CUIT: ${cfg.cuit}</div><div class="c">${cfg.condicion_iva}</div>`
+        : '',
+      cfg?.mostrar_direccion && cfg?.direccion
+        ? `<div class="c">${cfg.direccion}</div>`
+        : '',
+      cfg?.mostrar_telefono && cfg?.telefono
+        ? `<div class="c">Tel: ${cfg.telefono}</div>`
+        : '',
+    ].filter(Boolean).join('')
+
+    const pie = [
+      cfg?.mostrar_vendedor && data.vendedor
+        ? `<div>Vendedor: ${data.vendedor}</div>`
+        : '',
+      cfg?.mensaje_pie
+        ? `<hr class="sep"><div class="c">${cfg.mensaje_pie}</div>`
+        : `<hr class="sep"><div class="c">¡Gracias!</div>`,
+    ].filter(Boolean).join('')
+
+    const ticketBody = `
+${cabecera}
 <hr class="sep">
 <div>${fecha}</div>${numStr ? `<div>Venta <b>${numStr}</b></div>` : ''}
 <hr class="sep">
@@ -169,9 +197,23 @@ ${itemsHTML}
 <div class="row b"><span>TOTAL</span><span>$${data.total.toLocaleString('es-AR')}</span></div>
 <hr class="sep">
 <div>Método: ${metodoLabel[data.metodoPago] ?? data.metodoPago}</div>
-<hr class="sep">
-<div class="c">¡Gracias!</div>
-</body></html>`
+${pie}`
+
+    const copiasHTML = Array.from({ length: copias }, (_, i) =>
+      `<div class="copia">${ticketBody}</div>`
+    ).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
+.c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
+.sep{border:none;border-top:1px dashed #555;margin:4px 0}
+.row{display:flex;justify-content:space-between;gap:4px;padding:1px 0}
+.row span:first-child{flex:1}
+.copia{page-break-after:always}.copia:last-child{page-break-after:auto}
+@media print{@page{margin:0;size:${ancho} auto}}
+</style></head><body>${copiasHTML}</body></html>`
+
     const iframe = document.createElement('iframe')
     iframe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;border:0'
     document.body.appendChild(iframe)
@@ -183,7 +225,7 @@ ${itemsHTML}
       iframe.contentWindow!.print()
       setTimeout(() => document.body.removeChild(iframe), 1500)
     }, 200)
-  }, [tamanoTicket, negocioNombre])
+  }, [configTicket, tamanoTicket, negocioNombre])
 
   // Auto-foco en búsqueda siempre (el input es persistente)
   useEffect(() => {

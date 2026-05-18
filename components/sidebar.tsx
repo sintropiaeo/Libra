@@ -13,6 +13,7 @@ import {
   BookOpen,
   Settings,
   ShieldAlert,
+  Receipt,
 } from 'lucide-react'
 import { signOut } from '@/app/login/actions'
 import type { Perfil } from '@/lib/permisos'
@@ -86,10 +87,20 @@ export default function Sidebar({
             <div className="my-2 border-t border-slate-800" />
             <Link
               href="/configuracion"
-              className={linkClass(pathname.startsWith('/configuracion'))}
+              className={linkClass(
+                pathname === '/configuracion' ||
+                (pathname.startsWith('/configuracion') && !pathname.startsWith('/configuracion/tickets'))
+              )}
             >
               <Settings className="w-5 h-5 shrink-0" />
               Configuración
+            </Link>
+            <Link
+              href="/configuracion/tickets"
+              className={linkClass(pathname.startsWith('/configuracion/tickets'))}
+            >
+              <Receipt className="w-5 h-5 shrink-0" />
+              Tickets de Venta
             </Link>
           </>
         )}

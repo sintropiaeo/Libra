@@ -34,6 +34,24 @@ export interface NegocioConfig {
   sonido_escaneo:       boolean
 }
 
+export interface ConfiguracionTicket {
+  id:                 string
+  nombre_comercio:    string
+  direccion:          string
+  cuit:               string
+  condicion_iva:      string
+  telefono:           string | null
+  logo_url:           string | null
+  ancho_papel:        '58mm' | '80mm'
+  mostrar_logo:       boolean
+  mostrar_cuit:       boolean
+  mostrar_telefono:   boolean
+  mostrar_direccion:  boolean
+  mensaje_pie:        string | null
+  mostrar_vendedor:   boolean
+  copias_a_imprimir:  number
+}
+
 // ─── Defaults ──────────────────────────────────────────────────────────────
 
 export const PERMISOS_DEFAULT: PermisosEmpleado = {
