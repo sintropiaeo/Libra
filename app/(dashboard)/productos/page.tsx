@@ -33,7 +33,7 @@ export default async function ProductosPage({
     .order('nombre')
     .range(from, to)
 
-  if (q)   query = query.ilike('nombre', `%${q}%`)
+  if (q)   query = query.or(`nombre.ilike.%${q}%,codigo_barras.eq.${q}`)
   if (cat) query = query.eq('categoria_id', cat)
 
   const [{ data: productosRaw, count }, { data: categorias }, { data: perfilData }] = await Promise.all([

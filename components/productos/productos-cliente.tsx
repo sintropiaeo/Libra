@@ -103,7 +103,9 @@ export default function ProductosCliente({
   const [modalImportar, setModalImportar] = useState(false)
 
   // Búsqueda con debounce (no hace navigate en cada tecla)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastInputTimeRef = useRef(0)
+  const isScannerRef     = useRef(false)
   const [busquedaLocal, setBusquedaLocal] = useState(q)
 
   const navigate = useCallback((params: { q?: string; cat?: string; p?: number }) => {
@@ -117,10 +119,26 @@ export default function ProductosCliente({
     startTransition(() => router.push(`/productos?${sp.toString()}`))
   }, [q, cat, router])
 
-  function handleBusqueda(value: string) {
+  function handleBusqueda(e: React.ChangeEvent<HTMLInputElement>) {
+    const now = Date.now()
+    const gap = now - lastInputTimeRef.current
+    lastInputTimeRef.current = now
+    if (gap > 200)                isScannerRef.current = false
+    else if (gap > 0 && gap < 50) isScannerRef.current = true
+
+    const value = e.target.value
     setBusquedaLocal(value)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => navigate({ q: value, p: 1 }), 350)
+  }
+
+  function handleKeyDownBusqueda(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && isScannerRef.current && busquedaLocal.trim()) {
+      e.preventDefault()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      isScannerRef.current = false
+      navigate({ q: busquedaLocal.trim(), p: 1 })
+    }
   }
 
   function handleCategoria(value: string) {
@@ -244,9 +262,10 @@ export default function ProductosCliente({
             id="busqueda-productos"
             name="busqueda-productos"
             type="search"
-            placeholder="Buscar por nombre..."
+            placeholder="Buscar por nombre o código de barras..."
             value={busquedaLocal}
-            onChange={(e) => handleBusqueda(e.target.value)}
+            onChange={handleBusqueda}
+            onKeyDown={handleKeyDownBusqueda}
             className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white"
           />
         </div>
