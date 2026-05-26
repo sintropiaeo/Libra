@@ -61,6 +61,59 @@ const ARS = (v: number) =>
     maximumFractionDigits: 0,
   }).format(v)
 
+// ─── Hook: scanner global de código de barras ─────────────────────────────────
+// Escucha keydown en document, independientemente del foco.
+// Si llegan ≥4 caracteres en <100 ms seguidos de Enter → es un scanner.
+// Se ignora cuando el search input ya tiene foco (lo maneja él solo).
+
+function useBarcodeScanner(
+  onBarcode: (code: string) => void,
+  excludeRef: React.RefObject<HTMLInputElement>,
+) {
+  const cbRef = useRef(onBarcode)
+  cbRef.current = onBarcode
+
+  const bufferRef = useRef<string[]>([])
+  const timesRef  = useRef<number[]>([])
+  const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Si el input de búsqueda tiene foco, ya maneja el scanner por su cuenta
+      if (excludeRef.current && document.activeElement === excludeRef.current) return
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+
+      if (e.key === 'Enter') {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        const code  = bufferRef.current.join('')
+        const times = timesRef.current
+        bufferRef.current = []
+        timesRef.current  = []
+        if (code.length >= 4 && times.length >= 2) {
+          const span = times[times.length - 1] - times[0]
+          if (span < 100) {
+            console.log(`[BarcodeScanner] código: "${code}" · ${times.length} chars en ${span}ms`)
+            cbRef.current(code)
+          }
+        }
+        return
+      }
+
+      if (e.key.length !== 1) return
+      bufferRef.current.push(e.key)
+      timesRef.current.push(Date.now())
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => {
+        bufferRef.current = []
+        timesRef.current  = []
+      }, 150)
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [excludeRef])
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function PosCliente({
@@ -88,7 +141,11 @@ export default function PosCliente({
   sonidoEscaneo?:       boolean
   configTicket?:        ConfiguracionTicket | null
 }) {
-  const searchRef = useRef<HTMLInputElement>(null)
+  const searchRef       = useRef<HTMLInputElement>(null)
+  const hiddenInputRef  = useRef<HTMLInputElement>(null)
+  const posContainerRef = useRef<HTMLDivElement>(null)
+  const activeTabRef    = useRef<ActiveTab>('ventas_hoy')
+  const toastIdRef      = useRef(0)
 
   // ─── Estado ────────────────────────────────────────────────────────────────
   const [activeTab,      setActiveTab]      = useState<ActiveTab>('ventas_hoy')
@@ -107,6 +164,11 @@ export default function PosCliente({
   const [ventasHoy,      setVentasHoy]      = useState<VentaHoy[]>(ventasHoyInicial)
   // Error temporal de stock (se auto-descarta)
   const [stockError,     setStockError]     = useState<string | null>(null)
+  // Toasts de feedback del scanner
+  const [toasts, setToasts] = useState<{ id: number; type: 'success' | 'error'; msg: string }[]>([])
+
+  // Mantiene activeTabRef sincronizado sin provocar re-render
+  activeTabRef.current = activeTab
 
   // Búsqueda dinámica server-side
   const [resultadosBusqueda, setResultadosBusqueda] = useState<Producto[]>([])
@@ -135,6 +197,40 @@ export default function PosCliente({
       osc.stop(ctx.currentTime + 0.08)
     } catch { /* AudioContext no disponible */ }
   }
+
+  function showToast(type: 'success' | 'error', msg: string) {
+    const id = ++toastIdRef.current
+    setToasts(prev => [...prev, { id, type, msg }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 2500)
+  }
+
+  // Ref al handler global: patrón ref-como-función-siempre-fresca (evita stale closure)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleBarcodeGlobalRef = useRef(async (_: string) => {})
+  handleBarcodeGlobalRef.current = async (code: string) => {
+    if (activeTabRef.current === 'arqueo') return
+    console.log(`[BarcodeScanner] procesando código: "${code}"`)
+    const resultados = await buscarProductosPOS(code)
+    if (hiddenInputRef.current) hiddenInputRef.current.value = ''
+    if (resultados.length > 0) {
+      const agregado = agregarAlCarrito(resultados[0])
+      if (agregado) {
+        if (sonidoEscaneo) playBeep()
+        showToast('success', `Agregado: ${resultados[0].nombre}`)
+      } else {
+        showToast('error', `"${resultados[0].nombre}" sin stock`)
+      }
+    } else {
+      showToast('error', `Código "${code}" no encontrado`)
+    }
+  }
+
+  // Callback estable que delega al ref (el hook solo se crea una vez)
+  const stableOnBarcode = useCallback((code: string) => {
+    handleBarcodeGlobalRef.current(code)
+  }, [])
+
+  useBarcodeScanner(stableOnBarcode, searchRef)
 
   const generarHTMLTicket = useCallback((data: {
     numeroVenta: number
@@ -236,10 +332,27 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
     }, 200)
   }, [generarHTMLTicket])
 
-  // Auto-foco en búsqueda siempre (el input es persistente)
+  // Auto-foco en búsqueda cuando cambia de tab
   useEffect(() => {
     if (activeTab === 'ventas_hoy') searchRef.current?.focus()
   }, [activeTab])
+
+  // Foco inicial en input oculto (receptor del scanner cuando nada más tiene foco)
+  useEffect(() => { hiddenInputRef.current?.focus() }, [])
+
+  // Click en zona no-interactiva del POS → devolver foco al input oculto
+  useEffect(() => {
+    const container = posContainerRef.current
+    if (!container) return
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('input, textarea, select, button, a, [tabindex]')) {
+        hiddenInputRef.current?.focus()
+      }
+    }
+    container.addEventListener('click', handleClick)
+    return () => container.removeEventListener('click', handleClick)
+  }, [])
 
   // servicios viene de props (cargados desde el servidor al inicio)
 
@@ -250,10 +363,10 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
     setTimeout(() => setStockError(null), 3000)
   }
 
-  function agregarAlCarrito(p: Producto, cantidad = 1) {
+  function agregarAlCarrito(p: Producto, cantidad = 1): boolean {
     if (p.stock_actual <= 0 && !p.permitir_venta_sin_stock) {
       mostrarStockError(`"${p.nombre}" no tiene stock disponible`)
-      return
+      return false
     }
     setCart((prev) => {
       const existing = prev.find((i) => i.producto_id === p.id)
@@ -275,6 +388,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
     })
     setBusqueda('')
     setTimeout(() => searchRef.current?.focus(), 0)
+    return true
   }
 
   function incrementar(id: string) {
@@ -352,9 +466,14 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
     e.preventDefault()
 
     if (resultadosBusqueda.length > 0) {
-      if (isScannerRef.current && sonidoEscaneo) playBeep()
+      const wasScanner = isScannerRef.current
+      if (wasScanner && sonidoEscaneo) playBeep()
       isScannerRef.current = false
-      agregarAlCarrito(resultadosBusqueda[0])
+      const agregado = agregarAlCarrito(resultadosBusqueda[0])
+      if (wasScanner) {
+        if (agregado) showToast('success', `Agregado: ${resultadosBusqueda[0].nombre}`)
+        else          showToast('error',   `"${resultadosBusqueda[0].nombre}" sin stock`)
+      }
       return
     }
 
@@ -370,9 +489,12 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
       setBuscando(false)
       if (resultados.length > 0) {
         if (sonidoEscaneo) playBeep()
-        agregarAlCarrito(resultados[0])
+        const agregado = agregarAlCarrito(resultados[0])
+        if (agregado) showToast('success', `Agregado: ${resultados[0].nombre}`)
+        else          showToast('error',   `"${resultados[0].nombre}" sin stock`)
       } else {
         mostrarStockError(`Código "${busqueda}" no encontrado`)
+        showToast('error', `Código "${busqueda}" no encontrado`)
       }
     }
   }
@@ -458,7 +580,18 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
     }`
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div ref={posContainerRef} className="h-screen flex flex-col overflow-hidden">
+
+      {/* Input oculto: receptor de focus cuando el usuario no está en ningún input.
+          El scanner escribe aquí; el hook global lo captura por document.keydown. */}
+      <input
+        ref={hiddenInputRef}
+        type="text"
+        aria-hidden="true"
+        tabIndex={-1}
+        autoComplete="off"
+        className="sr-only"
+      />
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shrink-0">
@@ -832,6 +965,24 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
             </>
           )}
         </div>
+      </div>
+
+      {/* Toasts de feedback del scanner */}
+      <div className="fixed bottom-5 right-5 z-[200] flex flex-col gap-2 pointer-events-none">
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            className={`flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold text-white ${
+              t.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
+            }`}
+          >
+            {t.type === 'success'
+              ? <CheckCircle className="w-4 h-4 shrink-0" />
+              : <AlertTriangle className="w-4 h-4 shrink-0" />
+            }
+            {t.msg}
+          </div>
+        ))}
       </div>
     </div>
   )
