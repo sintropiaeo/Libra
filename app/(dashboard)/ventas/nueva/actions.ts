@@ -13,6 +13,7 @@ export type ProductoPOS = {
   stock_actual: number
   stock_minimo: number
   codigo_barras: string | null
+  codigo_interno: string | null
   unidad: string
   permitir_venta_sin_stock: boolean
   categorias: { nombre: string } | null
@@ -30,11 +31,11 @@ export async function buscarProductosPOS(q: string): Promise<ProductoPOS[]> {
     .select(`
       id, nombre, descripcion,
       precio_venta, stock_actual, stock_minimo,
-      codigo_barras, unidad, permitir_venta_sin_stock,
+      codigo_barras, codigo_interno, unidad, permitir_venta_sin_stock,
       categorias ( nombre )
     `)
     .eq('activo', true)
-    .or(`nombre.ilike.%${trimmed}%,codigo_barras.eq.${trimmed}`)
+    .or(`nombre.ilike.%${trimmed}%,codigo_barras.eq.${trimmed},codigo_interno.ilike.%${trimmed}%`)
     .order('nombre')
     .limit(40)
 

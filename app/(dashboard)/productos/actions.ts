@@ -30,6 +30,7 @@ export async function crearProducto(formData: FormData): Promise<ActionResult> {
     stock_actual:             Number(formData.get('stock_actual')),
     stock_minimo:             Number(formData.get('stock_minimo')),
     codigo_barras:            (formData.get('codigo_barras') as string)?.trim() || null,
+    codigo_interno:           (formData.get('codigo_interno') as string)?.trim() || null,
     unidad:                   formData.get('unidad') as string,
     permitir_venta_sin_stock: formData.get('permitir_venta_sin_stock') === 'true',
   })
@@ -57,6 +58,7 @@ export async function actualizarProducto(
       stock_actual:             Number(formData.get('stock_actual')),
       stock_minimo:             Number(formData.get('stock_minimo')),
       codigo_barras:            (formData.get('codigo_barras') as string)?.trim() || null,
+      codigo_interno:           (formData.get('codigo_interno') as string)?.trim() || null,
       unidad:                   formData.get('unidad') as string,
       permitir_venta_sin_stock: formData.get('permitir_venta_sin_stock') === 'true',
     })
@@ -93,6 +95,7 @@ export type ProductoImport = {
   stock_actual?: number
   stock_minimo?: number
   codigo_barras?: string | null
+  codigo_interno?: string | null
   unidad?: string
   categoria_nombre?: string | null
 }
@@ -168,6 +171,7 @@ export async function importarLoteProductos(
       stock_actual:             p.stock_actual  ?? 0,
       stock_minimo:             p.stock_minimo  ?? 5,
       codigo_barras:            p.codigo_barras?.trim() || null,
+      codigo_interno:           p.codigo_interno?.trim() || null,
       unidad:                   p.unidad        || 'unidad',
       activo:                   true,
       permitir_venta_sin_stock: false,

@@ -27,13 +27,13 @@ export default async function ProductosPage({
       id, nombre, descripcion,
       categoria_id, precio_costo, precio_venta,
       stock_actual, stock_minimo,
-      codigo_barras, unidad, activo, permitir_venta_sin_stock,
+      codigo_barras, codigo_interno, unidad, activo, permitir_venta_sin_stock,
       categorias ( nombre )
     `, { count: 'exact' })
     .order('nombre')
     .range(from, to)
 
-  if (q)   query = query.or(`nombre.ilike.%${q}%,codigo_barras.eq.${q}`)
+  if (q)   query = query.or(`nombre.ilike.%${q}%,codigo_barras.eq.${q},codigo_interno.ilike.%${q}%`)
   if (cat) query = query.eq('categoria_id', cat)
 
   const [{ data: productosRaw, count }, { data: categorias }, { data: perfilData }] = await Promise.all([

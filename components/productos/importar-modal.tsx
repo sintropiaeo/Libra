@@ -14,7 +14,7 @@ type Step = 'upload' | 'mapeo' | 'preview' | 'importando' | 'resultado'
 
 type CampoDestino =
   | 'nombre' | 'descripcion' | 'precio_costo' | 'precio_venta'
-  | 'stock_actual' | 'stock_minimo' | 'codigo_barras' | 'unidad'
+  | 'stock_actual' | 'stock_minimo' | 'codigo_barras' | 'codigo_interno' | 'unidad'
   | 'categoria_nombre' | ''
 
 interface ColMapping { origen: string; destino: CampoDestino }
@@ -27,6 +27,7 @@ interface ProductoImport {
   stock_actual?:    number
   stock_minimo?:    number
   codigo_barras?:   string | null
+  codigo_interno?:  string | null
   unidad?:          string
   categoria_nombre?: string | null
 }
@@ -38,15 +39,16 @@ interface FilaFallida extends ProductoImport { _error: string }
 const BATCH_SIZE = 500
 
 const CAMPOS_DESTINO: { value: CampoDestino; label: string; required?: boolean }[] = [
-  { value: 'nombre',           label: 'Nombre',        required: true },
-  { value: 'descripcion',      label: 'Descripción'   },
-  { value: 'precio_costo',     label: 'Precio costo'  },
-  { value: 'precio_venta',     label: 'Precio venta'  },
-  { value: 'stock_actual',     label: 'Stock actual'  },
-  { value: 'stock_minimo',     label: 'Stock mínimo'  },
-  { value: 'codigo_barras',    label: 'Código barras' },
-  { value: 'unidad',           label: 'Unidad'        },
-  { value: 'categoria_nombre', label: 'Categoría'     },
+  { value: 'nombre',           label: 'Nombre',         required: true },
+  { value: 'descripcion',      label: 'Descripción'    },
+  { value: 'precio_costo',     label: 'Precio costo'   },
+  { value: 'precio_venta',     label: 'Precio venta'   },
+  { value: 'stock_actual',     label: 'Stock actual'   },
+  { value: 'stock_minimo',     label: 'Stock mínimo'   },
+  { value: 'codigo_interno',   label: 'Código interno' },
+  { value: 'codigo_barras',    label: 'Código barras'  },
+  { value: 'unidad',           label: 'Unidad'         },
+  { value: 'categoria_nombre', label: 'Categoría'      },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -115,7 +117,8 @@ export default function ImportarModal({ onClose, onSuccess }: {
           else if (c.includes('venta'))                                    destino = 'precio_venta'
           else if (c.includes('stockact') || c === 'stock')               destino = 'stock_actual'
           else if (c.includes('stockmin') || c.includes('minimo'))        destino = 'stock_minimo'
-          else if (c.includes('codigo') || c.includes('barras') || c.includes('ean') || c.includes('sku')) destino = 'codigo_barras'
+          else if (c.includes('interno') || c === 'cod' || c === 'codigo')       destino = 'codigo_interno'
+          else if (c.includes('barras') || c.includes('ean') || c.includes('sku') || c.includes('codigo')) destino = 'codigo_barras'
           else if (c.includes('unidad'))                                   destino = 'unidad'
           else if (c.includes('categ'))                                    destino = 'categoria_nombre'
           return { origen: col, destino }
@@ -150,13 +153,14 @@ export default function ImportarModal({ onClose, onSuccess }: {
     }
     return {
       nombre:           toStr(get('nombre')),
-      descripcion:      toStr(get('descripcion')) || null,
+      descripcion:      toStr(get('descripcion'))   || null,
       precio_costo:     toNum(get('precio_costo')),
       precio_venta:     toNum(get('precio_venta')),
       stock_actual:     toNum(get('stock_actual')),
       stock_minimo:     toNum(get('stock_minimo')),
-      codigo_barras:    toStr(get('codigo_barras')) || null,
-      unidad:           toStr(get('unidad')) || 'unidad',
+      codigo_barras:    toStr(get('codigo_barras'))  || null,
+      codigo_interno:   toStr(get('codigo_interno')) || null,
+      unidad:           toStr(get('unidad'))         || 'unidad',
       categoria_nombre: toStr(get('categoria_nombre')) || null,
     }
   }
@@ -222,7 +226,8 @@ export default function ImportarModal({ onClose, onSuccess }: {
         precio_venta:             p.precio_venta  ?? 0,
         stock_actual:             p.stock_actual  ?? 0,
         stock_minimo:             p.stock_minimo  ?? 5,
-        codigo_barras:            p.codigo_barras?.trim() || null,
+        codigo_barras:            p.codigo_barras?.trim()  || null,
+        codigo_interno:           p.codigo_interno?.trim() || null,
         unidad:                   (['unidad','pack','resma','metro'].includes(p.unidad ?? '') ? p.unidad : 'unidad') as string,
         activo:                   true,
         permitir_venta_sin_stock: true,

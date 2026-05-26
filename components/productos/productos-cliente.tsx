@@ -27,6 +27,7 @@ type Producto = {
   stock_actual: number
   stock_minimo: number
   codigo_barras: string | null
+  codigo_interno: string | null
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
   activo: boolean
   permitir_venta_sin_stock: boolean
@@ -42,6 +43,7 @@ type FormValues = {
   stock_actual: string
   stock_minimo: string
   codigo_barras: string
+  codigo_interno: string
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
   permitir_venta_sin_stock: boolean
 }
@@ -64,6 +66,7 @@ const FORM_VACIO: FormValues = {
   stock_actual:             '0',
   stock_minimo:             '5',
   codigo_barras:            '',
+  codigo_interno:           '',
   unidad:                   'unidad',
   permitir_venta_sin_stock: true,
 }
@@ -164,7 +167,8 @@ export default function ProductosCliente({
       precio_venta:             String(p.precio_venta),
       stock_actual:             String(p.stock_actual),
       stock_minimo:             String(p.stock_minimo),
-      codigo_barras:            p.codigo_barras ?? '',
+      codigo_barras:            p.codigo_barras  ?? '',
+      codigo_interno:           p.codigo_interno ?? '',
       unidad:                   p.unidad,
       permitir_venta_sin_stock: p.permitir_venta_sin_stock ?? true,
     })
@@ -312,6 +316,7 @@ export default function ProductosCliente({
               <thead>
                 <tr className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
                   <th className="px-5 py-3.5">Nombre</th>
+                  <th className="px-5 py-3.5">Código</th>
                   <th className="px-5 py-3.5">Categoría</th>
                   <th className="px-5 py-3.5">P. Venta</th>
                   <th className="px-5 py-3.5">Stock</th>
@@ -334,6 +339,9 @@ export default function ProductosCliente({
                         {p.codigo_barras && (
                           <p className="text-xs text-slate-400 mt-0.5 font-mono">{p.codigo_barras}</p>
                         )}
+                      </td>
+                      <td className="px-5 py-4 font-mono text-sm text-slate-600 whitespace-nowrap">
+                        {p.codigo_interno ?? '—'}
                       </td>
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
@@ -475,6 +483,28 @@ export default function ProductosCliente({
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="p-cod-interno" className={label}>Código interno</label>
+                    <input
+                      id="p-cod-interno" name="codigo_interno" type="text"
+                      placeholder="Ej: A-101, LIB-25"
+                      value={form.codigo_interno}
+                      onChange={(e) => setForm({ ...form, codigo_interno: e.target.value })}
+                      className={input}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="p-barras" className={label}>Código de barras</label>
+                    <input
+                      id="p-barras" name="p-barras" type="text" placeholder="Opcional"
+                      value={form.codigo_barras}
+                      onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
+                      className={input}
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label htmlFor="p-descripcion" className={label}>Descripción</label>
                   <input
@@ -556,16 +586,6 @@ export default function ProductosCliente({
                       className={input}
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label htmlFor="p-barras" className={label}>Código de barras</label>
-                  <input
-                    id="p-barras" name="p-barras" type="text" placeholder="Opcional"
-                    value={form.codigo_barras}
-                    onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
-                    className={input}
-                  />
                 </div>
 
                 <div
