@@ -158,7 +158,7 @@ export default function HistorialComprasCliente({
             <select
               value={provFiltro}
               onChange={(e) => setProvFiltro(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none text-slate-600"
+              className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none text-slate-900"
             >
               <option value="">Todos los proveedores</option>
               {proveedores.map((p) => (
@@ -233,7 +233,7 @@ export default function HistorialComprasCliente({
                         <span className="text-slate-400 text-xs">Sin proveedor</span>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-slate-400 text-xs max-w-xs truncate">
+                    <td className="px-5 py-3.5 text-slate-600 text-xs max-w-xs truncate">
                       {c.notas || '—'}
                     </td>
                     <td className="px-5 py-3.5 text-right font-bold text-slate-800 whitespace-nowrap">

@@ -301,7 +301,7 @@ function PermisosPanel({ perfil, onSave, onError }: {
           <select
             value={p.productos}
             onChange={e => setP(prev => ({ ...prev, productos: e.target.value as PermisosEmpleado['productos'] }))}
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 bg-white text-slate-700"
+            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 bg-white text-slate-900"
           >
             {Object.entries(LABEL_PRODUCTOS).map(([val, lbl]) => (
               <option key={val} value={val}>{lbl}</option>
@@ -316,7 +316,7 @@ function PermisosPanel({ perfil, onSave, onError }: {
           <select
             value={p.compras}
             onChange={e => setP(prev => ({ ...prev, compras: e.target.value as PermisosEmpleado['compras'] }))}
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 bg-white text-slate-700"
+            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 bg-white text-slate-900"
           >
             {Object.entries(LABEL_COMPRAS).map(([val, lbl]) => (
               <option key={val} value={val}>{lbl}</option>

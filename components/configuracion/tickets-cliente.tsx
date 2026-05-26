@@ -301,7 +301,7 @@ export default function TicketsCliente({ config }: { config: ConfiguracionTicket
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
-const INPUT = 'w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white'
+const INPUT = 'w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white'
 
 function Card({
   icon, title, children,

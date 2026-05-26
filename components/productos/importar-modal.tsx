@@ -410,7 +410,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
                           const nuevoDestino = e.target.value as CampoDestino
                           setMapeo((prev) => prev.map((x) => x.origen === col ? { ...x, destino: nuevoDestino } : x))
                         }}
-                        className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 px-3 py-2 text-sm text-slate-900 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">— Ignorar columna —</option>
                         {CAMPOS_DESTINO.map((c) => (

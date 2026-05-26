@@ -539,9 +539,9 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                           >
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-slate-800 text-sm truncate">{p.nombre}</p>
-                              <p className="text-xs text-slate-400">
+                              <p className="text-xs text-slate-500">
                                 {p.categorias?.nombre ?? '—'} · {p.unidad}
-                                {p.codigo_barras && <span className="ml-2 text-slate-300">#{p.codigo_barras}</span>}
+                                {p.codigo_barras && <span className="ml-2 text-slate-400">#{p.codigo_barras}</span>}
                               </p>
                             </div>
                             {p.stock_actual <= 0 && (
@@ -721,7 +721,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                       <li key={item.producto_id} className="py-3 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-800 text-sm truncate">{item.nombre}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">
+                          <p className="text-xs text-slate-600 mt-0.5">
                             {ARS(item.precio_unitario)} / {item.unidad}
                           </p>
                         </div>

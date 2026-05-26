@@ -311,7 +311,7 @@ export default function ProductosCliente({
           name="categoria-filtro"
           value={cat}
           onChange={(e) => handleCategoria(e.target.value)}
-          className="px-3 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+          className="px-3 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
         >
           <option value="">Todas las categorías</option>
           {categorias.map((c) => (
@@ -391,7 +391,7 @@ export default function ProductosCliente({
                       <td className="px-5 py-4 max-w-xs">
                         <p className="font-medium text-slate-800">{p.nombre}</p>
                         {p.codigo_barras && (
-                          <p className="text-xs text-slate-400 mt-0.5 font-mono">{p.codigo_barras}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 font-mono">{p.codigo_barras}</p>
                         )}
                       </td>
                       <td className="px-5 py-4 font-mono text-sm text-slate-600 whitespace-nowrap">
@@ -417,7 +417,7 @@ export default function ProductosCliente({
                         )}
                       </td>
                       <td className="px-5 py-4 text-slate-500 capitalize">{p.unidad}</td>
-                      <td className="px-5 py-4 text-xs text-slate-400 whitespace-nowrap">
+                      <td className="px-5 py-4 text-xs text-slate-600 whitespace-nowrap">
                         {formatRelativo(p.updated_at)}
                       </td>
                       <td className="px-5 py-4">
