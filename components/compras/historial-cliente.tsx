@@ -154,7 +154,7 @@ export default function HistorialComprasCliente({
         {/* Proveedor */}
         {proveedores.length > 0 && (
           <div className="relative">
-            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
             <select
               value={provFiltro}
               onChange={(e) => setProvFiltro(e.target.value)}

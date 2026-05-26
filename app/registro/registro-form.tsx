@@ -52,7 +52,7 @@ export default function RegistroForm() {
                 type="text"
                 required
                 placeholder="Juan Pérez"
-                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-600 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
 
@@ -67,7 +67,7 @@ export default function RegistroForm() {
                 type="email"
                 required
                 placeholder="tu@email.com"
-                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-600 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
 
@@ -84,7 +84,7 @@ export default function RegistroForm() {
                   required
                   minLength={6}
                   placeholder="Mínimo 6 caracteres"
-                  className="w-full px-4 py-2.5 pr-11 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-4 py-2.5 pr-11 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-600 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
                 <button
                   type="button"
@@ -108,7 +108,7 @@ export default function RegistroForm() {
                 type="text"
                 required
                 placeholder="Librería El Libro Feliz"
-                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-600 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
               <p className="text-xs text-slate-400 mt-1">
                 Aparecerá en los tickets de venta

@@ -155,13 +155,13 @@ export default function ProveedoresCliente({
       {/* Filtros */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
             placeholder="Buscar por nombre, email o teléfono..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-9 pr-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
@@ -289,14 +289,14 @@ export default function ProveedoresCliente({
 
                 {/* Nombre */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Nombre <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={form.nombre}
                     onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Nombre del proveedor"
                     autoFocus
                   />
@@ -305,22 +305,22 @@ export default function ProveedoresCliente({
                 {/* Teléfono + Email */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Teléfono</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono</label>
                     <input
                       type="tel"
                       value={form.telefono}
                       onChange={(e) => setForm({ ...form, telefono: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="11 1234-5678"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
                     <input
                       type="email"
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="proveedor@email.com"
                     />
                   </div>
@@ -328,24 +328,24 @@ export default function ProveedoresCliente({
 
                 {/* Dirección */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Dirección</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Dirección</label>
                   <input
                     type="text"
                     value={form.direccion}
                     onChange={(e) => setForm({ ...form, direccion: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Av. Corrientes 1234, CABA"
                   />
                 </div>
 
                 {/* Notas */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Notas</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Notas</label>
                   <textarea
                     value={form.notas}
                     onChange={(e) => setForm({ ...form, notas: e.target.value })}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                     placeholder="Observaciones, condiciones de pago, etc."
                   />
                 </div>

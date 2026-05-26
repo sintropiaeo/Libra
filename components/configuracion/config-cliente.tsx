@@ -404,7 +404,7 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
               name="nombre"
               required
               placeholder="Ej: María García"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -414,7 +414,7 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
               type="email"
               required
               placeholder="empleado@gmail.com"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -425,7 +425,7 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
               required
               minLength={6}
               placeholder="Mínimo 6 caracteres"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-slate-400 mt-1">El empleado podrá cambiarla después de iniciar sesión.</p>
           </div>
@@ -493,7 +493,7 @@ function TabNegocio({ negocio, onRefresh }: { negocio: NegocioConfig | null; onR
           defaultValue={negocio?.nombre ?? ''}
           required
           placeholder="Ej: Librería El Saber"
-          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -503,7 +503,7 @@ function TabNegocio({ negocio, onRefresh }: { negocio: NegocioConfig | null; onR
           name="direccion"
           defaultValue={negocio?.direccion ?? ''}
           placeholder="Ej: Av. Corrientes 1234, CABA"
-          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -513,7 +513,7 @@ function TabNegocio({ negocio, onRefresh }: { negocio: NegocioConfig | null; onR
           name="telefono"
           defaultValue={negocio?.telefono ?? ''}
           placeholder="Ej: +54 11 1234-5678"
-          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -936,7 +936,7 @@ function TabCategorias({ categorias: init, onRefresh }: { categorias: Categoria[
             onChange={e => setNuevoNombre(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setShowAdd(false) }}
             placeholder="Nombre de la categoría"
-            className="flex-1 border border-blue-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 border border-blue-400 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
             onClick={handleAdd}
@@ -973,7 +973,7 @@ function TabCategorias({ categorias: init, onRefresh }: { categorias: Categoria[
                   value={editNombre}
                   onChange={e => setEditNombre(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') handleEdit(cat); if (e.key === 'Escape') cancelEdit() }}
-                  className="flex-1 border border-blue-400 rounded px-2 py-1 text-sm focus:outline-none"
+                  className="flex-1 border border-blue-400 rounded px-2 py-1 text-base text-slate-900 focus:outline-none"
                 />
                 <button
                   onClick={() => handleEdit(cat)}

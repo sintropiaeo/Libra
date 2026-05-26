@@ -374,7 +374,7 @@ export default function NuevaCompraCliente({
           <div className="p-4 border-b border-slate-100 bg-white">
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 pointer-events-none" />
                 <input
                   ref={searchRef}
                   type="text"
@@ -382,7 +382,7 @@ export default function NuevaCompraCliente({
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  className="w-full pl-11 pr-4 py-3 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
+                  className="w-full pl-11 pr-4 py-3 text-base rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
                 />
               </div>
               {/* Botón crear producto */}
@@ -614,7 +614,7 @@ export default function NuevaCompraCliente({
                       Proveedor
                     </label>
                     <div className="relative">
-                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                       <select
                         value={proveedorId}
                         onChange={(e) => setProveedorId(e.target.value)}
@@ -637,7 +637,7 @@ export default function NuevaCompraCliente({
                       value={notas}
                       onChange={(e) => setNotas(e.target.value)}
                       placeholder="Remito, factura, observaciones..."
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
@@ -734,14 +734,14 @@ export default function NuevaCompraCliente({
 
                 {/* Nombre */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Nombre <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formProducto.nombre}
                     onChange={(e) => setFormProducto({ ...formProducto, nombre: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Nombre del producto"
                     autoFocus
                   />
@@ -750,11 +750,11 @@ export default function NuevaCompraCliente({
                 {/* Unidad + Precio */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Unidad</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Unidad</label>
                     <select
                       value={formProducto.unidad}
                       onChange={(e) => setFormProducto({ ...formProducto, unidad: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                       {UNIDADES.map((u) => (
                         <option key={u} value={u}>{u}</option>
@@ -762,14 +762,14 @@ export default function NuevaCompraCliente({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Precio de costo</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Precio de costo</label>
                     <input
                       type="number"
                       min={0}
                       step={0.01}
                       value={formProducto.precio_costo}
                       onChange={(e) => setFormProducto({ ...formProducto, precio_costo: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0"
                     />
                   </div>
@@ -777,13 +777,13 @@ export default function NuevaCompraCliente({
 
                 {/* Stock mínimo */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Stock mínimo</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Stock mínimo</label>
                   <input
                     type="number"
                     min={0}
                     value={formProducto.stock_minimo}
                     onChange={(e) => setFormProducto({ ...formProducto, stock_minimo: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-base text-slate-900 placeholder-slate-600 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <p className="text-xs text-slate-400 mt-1">Podés editar precio de venta y más datos desde la sección Productos</p>
                 </div>

@@ -492,7 +492,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
           {/* Buscador — siempre visible */}
           <div className="px-4 pt-4 pb-3 border-b border-slate-100 bg-white shrink-0 relative z-20">
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 pointer-events-none" />
               <input
                 ref={searchRef}
                 type="text"
@@ -500,7 +500,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                 value={busqueda}
                 onChange={handleSearchChange}
                 onKeyDown={handleKeyDown}
-                className="w-full pl-11 pr-4 py-3 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
+                className="w-full pl-11 pr-4 py-3 text-base rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition"
               />
             </div>
 

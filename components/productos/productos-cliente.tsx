@@ -253,8 +253,8 @@ export default function ProductosCliente({
   // ─── Estilos reutilizables ────────────────────────────────────────────────
 
   const input =
-    'w-full px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white'
-  const label = 'block text-xs font-medium text-slate-600 mb-1.5'
+    'w-full px-3 py-2 text-base rounded-lg border border-slate-200 text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white'
+  const label = 'block text-sm font-medium text-slate-700 mb-1.5'
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -294,7 +294,7 @@ export default function ProductosCliente({
       {/* Filtros */}
       <div className="flex flex-wrap gap-3 mb-4">
         <div className="relative flex-1 min-w-56">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
           <input
             id="busqueda-productos"
             name="busqueda-productos"
@@ -303,7 +303,7 @@ export default function ProductosCliente({
             value={busquedaLocal}
             onChange={handleBusqueda}
             onKeyDown={handleKeyDownBusqueda}
-            className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white"
+            className="w-full pl-9 pr-4 py-2.5 text-base rounded-lg border border-slate-200 text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white"
           />
         </div>
         <select
