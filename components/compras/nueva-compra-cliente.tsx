@@ -488,7 +488,7 @@ export default function NuevaCompraCliente({
                   <ShoppingBag className="w-4 h-4 text-slate-500" />
                   <span className="font-semibold text-slate-800 text-sm">Detalle de compra</span>
                   {cantidadItems > 0 && (
-                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                    <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                       {cantidadItems}
                     </span>
                   )}
@@ -551,7 +551,7 @@ export default function NuevaCompraCliente({
                                 onChange={(e) =>
                                   setCantidad(item.producto_id, parseInt(e.target.value))
                                 }
-                                className="w-11 text-center text-sm font-bold border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-11 text-center text-sm font-bold text-slate-900 border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                               <button
                                 onClick={() => incrementar(item.producto_id)}
@@ -618,7 +618,7 @@ export default function NuevaCompraCliente({
                       <select
                         value={proveedorId}
                         onChange={(e) => setProveedorId(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                        className="w-full pl-9 pr-3 py-2 text-sm text-slate-900 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
                       >
                         <option value="">Sin proveedor</option>
                         {proveedores.map((p) => (

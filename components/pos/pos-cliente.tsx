@@ -574,7 +574,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
               Ventas de hoy
               {ventasHoy.length > 0 && (
                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-                  activeTab === 'ventas_hoy' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
+                  activeTab === 'ventas_hoy' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-white'
                 }`}>
                   {ventasHoy.length}
                 </span>
@@ -585,7 +585,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
               Servicios
               {servicios.length > 0 && (
                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-                  activeTab === 'servicios' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
+                  activeTab === 'servicios' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-white'
                 }`}>
                   {servicios.length}
                 </span>
@@ -682,7 +682,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                   <ShoppingCart className="w-4 h-4 text-slate-500" />
                   <span className="font-semibold text-slate-800 text-sm">Venta actual</span>
                   {cantidadItems > 0 && (
-                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                    <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                       {cantidadItems}
                     </span>
                   )}
@@ -737,7 +737,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                             min={1}
                             value={item.cantidad}
                             onChange={(e) => setCantidad(item.producto_id, parseInt(e.target.value))}
-                            className="w-11 text-center text-sm font-bold border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="w-11 text-center text-sm font-bold text-slate-900 border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
                           <button
                             onClick={() => incrementar(item.producto_id)}
