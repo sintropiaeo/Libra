@@ -33,7 +33,7 @@ export default async function ProductosPage({
       categoria_id, precio_costo, precio_venta,
       stock_actual, stock_minimo,
       codigo_barras, codigo_interno, unidad, activo, permitir_venta_sin_stock,
-      updated_at,
+      es_favorito, updated_at,
       categorias ( nombre )
     `, { count: 'exact' })
     .order(sort, { ascending: dir === 'asc' })

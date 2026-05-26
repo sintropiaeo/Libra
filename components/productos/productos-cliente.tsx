@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useTransition, useCallback, useRef } from 'react'
+import { useState, useEffect, useTransition, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, AlertTriangle, X, Package, Upload,
-  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
+  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star,
 } from 'lucide-react'
 import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -12,6 +12,7 @@ import {
   crearProducto,
   actualizarProducto,
   toggleActivoProducto,
+  toggleFavoritoProducto,
 } from '@/app/(dashboard)/productos/actions'
 import ImportarModal from '@/components/productos/importar-modal'
 
@@ -32,6 +33,7 @@ type Producto = {
   codigo_interno: string | null
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
   activo: boolean
+  es_favorito: boolean
   permitir_venta_sin_stock: boolean
   updated_at: string | null
   categorias: { nombre: string } | null
@@ -102,6 +104,13 @@ export default function ProductosCliente({
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+
+  // Lista local para actualizaciones optimistas
+  const [productosLocal, setProductosLocal] = useState<Producto[]>(productos)
+  useEffect(() => { setProductosLocal(productos) }, [productos])
+
+  // Filtro de favoritos (cliente, sobre la página actual)
+  const [soloFavoritos, setSoloFavoritos] = useState(false)
 
   // Modal crear/editar
   const [modalAbierto,     setModalAbierto]     = useState(false)
@@ -246,9 +255,26 @@ export default function ProductosCliente({
     startTransition(() => router.refresh())
   }
 
+  async function handleToggleFavorito(e: React.MouseEvent, p: Producto) {
+    e.stopPropagation()
+    const nuevo = !p.es_favorito
+    setProductosLocal(prev => prev.map(x => x.id === p.id ? { ...x, es_favorito: nuevo } : x))
+    const result = await toggleFavoritoProducto(p.id, nuevo)
+    if (result?.error) {
+      setProductosLocal(prev => prev.map(x => x.id === p.id ? { ...x, es_favorito: p.es_favorito } : x))
+    } else {
+      startTransition(() => router.refresh())
+    }
+  }
+
   // ─── Paginación ────────────────────────────────────────────────────────────
 
   const totalPages = Math.ceil(total / pageSize)
+
+  // Lista filtrada para la tabla (aplica filtro de favoritos sobre la página actual)
+  const productosMostrados = soloFavoritos
+    ? productosLocal.filter(p => p.es_favorito)
+    : productosLocal
 
   // ─── Estilos reutilizables ────────────────────────────────────────────────
 
@@ -318,6 +344,17 @@ export default function ProductosCliente({
             <option key={c.id} value={c.id}>{c.nombre}</option>
           ))}
         </select>
+        <button
+          onClick={() => setSoloFavoritos(f => !f)}
+          className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-sm transition-colors whitespace-nowrap ${
+            soloFavoritos
+              ? 'bg-amber-50 border-amber-300 text-amber-700 font-medium'
+              : 'bg-white border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-600'
+          }`}
+        >
+          <Star className={`w-4 h-4 ${soloFavoritos ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
+          Favoritos
+        </button>
       </div>
 
       <p className="text-xs text-slate-400 mb-3">
@@ -376,11 +413,14 @@ export default function ProductosCliente({
                     </button>
                   </th>
                   <th className="px-5 py-3.5">Estado</th>
+                  <th className="px-3 py-3.5 text-center">
+                    <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400" />
+                  </th>
                   <th className="px-5 py-3.5"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {productos.map((p) => {
+                {productosMostrados.map((p) => {
                   const stockBajo = p.stock_actual < p.stock_minimo
                   return (
                     <tr
@@ -427,6 +467,19 @@ export default function ProductosCliente({
                           <span className={`w-1.5 h-1.5 rounded-full ${p.activo ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                           {p.activo ? 'Activo' : 'Inactivo'}
                         </span>
+                      </td>
+                      <td className="px-3 py-4 text-center">
+                        {puedeEditar && (
+                          <button
+                            onClick={(e) => handleToggleFavorito(e, p)}
+                            title={p.es_favorito ? 'Quitar de favoritos' : 'Marcar como favorito'}
+                            className="p-1.5 rounded-lg hover:bg-amber-50 transition-colors"
+                          >
+                            <Star className={`w-4 h-4 transition-colors ${
+                              p.es_favorito ? 'fill-amber-400 text-amber-400' : 'text-slate-300 hover:text-amber-400'
+                            }`} />
+                          </button>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         {puedeEditar && (

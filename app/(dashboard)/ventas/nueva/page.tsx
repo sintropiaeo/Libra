@@ -20,8 +20,8 @@ export default async function NuevaVentaPage() {
     .ilike('nombre', 'servicio%')
   const catIds = catServ?.map((c) => c.id) ?? []
 
-  // Fetch en paralelo: servicios, config, arqueo, ventas de hoy y config de tickets
-  const [serviciosRes, configRes, arqueoRes, ventasHoyRes, configTicketRes] = await Promise.all([
+  // Fetch en paralelo: servicios, config, arqueo, ventas de hoy, config de tickets y favoritos
+  const [serviciosRes, configRes, arqueoRes, ventasHoyRes, configTicketRes, favoritosRes] = await Promise.all([
     catIds.length > 0
       ? supabase
           .from('productos')
@@ -29,7 +29,7 @@ export default async function NuevaVentaPage() {
             id, nombre, descripcion,
             precio_venta, stock_actual, stock_minimo,
             codigo_barras, unidad, permitir_venta_sin_stock,
-            categorias ( nombre )
+            es_favorito, categorias ( nombre )
           `)
           .eq('activo', true)
           .in('categoria_id', catIds)
@@ -63,6 +63,17 @@ export default async function NuevaVentaPage() {
       .select('*')
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('productos')
+      .select(`
+        id, nombre, descripcion,
+        precio_venta, stock_actual, stock_minimo,
+        codigo_barras, codigo_interno, unidad, permitir_venta_sin_stock,
+        es_favorito, categorias ( nombre )
+      `)
+      .eq('activo', true)
+      .eq('es_favorito', true)
+      .order('nombre'),
   ])
 
   const arqueoAbierto = (arqueoRes.data ?? null) as ArqueoCaja | null
@@ -111,6 +122,8 @@ export default async function NuevaVentaPage() {
       tamanoTicket={tamanoTicket}
       sonidoEscaneo={sonidoEscaneo}
       configTicket={(configTicketRes.data as ConfiguracionTicket | null)}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      favoritosIniciales={(favoritosRes.data as any) ?? []}
     />
   )
 }

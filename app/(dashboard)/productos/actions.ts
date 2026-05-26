@@ -85,6 +85,23 @@ export async function toggleActivoProducto(
   return { success: true }
 }
 
+export async function toggleFavoritoProducto(
+  id: string,
+  esFavorito: boolean
+): Promise<ActionResult> {
+  const supabase = await verificarEditorProductos()
+  if (!supabase) return { error: 'Sin permisos.' }
+  const { error } = await supabase
+    .from('productos')
+    .update({ es_favorito: esFavorito })
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return { success: true }
+}
+
 // ─── Importación masiva ───────────────────────────────────────────────────────
 
 export type ProductoImport = {

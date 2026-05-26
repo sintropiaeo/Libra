@@ -6,7 +6,7 @@ import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingCart, Banknote, Smartphone,
   CreditCard, Clock, Package, Printer, Calculator,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Star,
 } from 'lucide-react'
 import { crearVenta, buscarProductosPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
@@ -128,6 +128,7 @@ export default function PosCliente({
   tamanoTicket       = '80mm',
   sonidoEscaneo      = false,
   configTicket       = null,
+  favoritosIniciales = [] as Producto[],
 }: {
   servicios:            Producto[]
   metodosActivos?:      string[]
@@ -140,6 +141,7 @@ export default function PosCliente({
   tamanoTicket?:        '58mm' | '80mm'
   sonidoEscaneo?:       boolean
   configTicket?:        ConfiguracionTicket | null
+  favoritosIniciales?:  Producto[]
 }) {
   const searchRef       = useRef<HTMLInputElement>(null)
   const hiddenInputRef  = useRef<HTMLInputElement>(null)
@@ -699,6 +701,32 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
               </div>
             )}
           </div>
+
+          {/* Panel de favoritos */}
+          {favoritosIniciales.length > 0 && (
+            <div className="shrink-0 bg-white border-b border-slate-100">
+              <p className="px-4 pt-2.5 pb-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                Favoritos
+              </p>
+              <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+                {favoritosIniciales.map((p) => (
+                  <button
+                    key={p.id}
+                    onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
+                    title={p.nombre}
+                    className="shrink-0 w-[110px] h-[88px] relative rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/60 active:scale-95 flex flex-col justify-between p-2.5 transition-all text-left"
+                  >
+                    <Star className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    <p className="font-semibold text-slate-800 text-xs leading-tight line-clamp-3 pr-4">
+                      {p.nombre}
+                    </p>
+                    <p className="text-sm font-bold text-blue-600">{ARS(p.precio_venta)}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="flex shrink-0 border-b border-slate-200 bg-white">
