@@ -4,8 +4,10 @@ import { useState, useTransition, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, AlertTriangle, X, Package, Upload,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react'
+import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
+import { es } from 'date-fns/locale'
 import {
   crearProducto,
   actualizarProducto,
@@ -31,6 +33,7 @@ type Producto = {
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
   activo: boolean
   permitir_venta_sin_stock: boolean
+  updated_at: string | null
   categorias: { nombre: string } | null
 }
 
@@ -78,6 +81,9 @@ const ARS = (v: number) =>
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
+type SortField = 'nombre' | 'updated_at'
+type SortDir   = 'asc' | 'desc'
+
 interface Props {
   productos:   Producto[]
   total:       number
@@ -87,10 +93,12 @@ interface Props {
   puedeEditar?: boolean
   q:           string
   cat:         string
+  sort:        SortField
+  dir:         SortDir
 }
 
 export default function ProductosCliente({
-  productos, total, page, pageSize, categorias, puedeEditar = true, q, cat,
+  productos, total, page, pageSize, categorias, puedeEditar = true, q, cat, sort, dir,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -111,16 +119,41 @@ export default function ProductosCliente({
   const isScannerRef     = useRef(false)
   const [busquedaLocal, setBusquedaLocal] = useState(q)
 
-  const navigate = useCallback((params: { q?: string; cat?: string; p?: number }) => {
+  const navigate = useCallback((params: { q?: string; cat?: string; p?: number; sort?: SortField; dir?: SortDir }) => {
     const sp = new URLSearchParams()
-    const newQ   = params.q   !== undefined ? params.q   : q
-    const newCat = params.cat !== undefined ? params.cat : cat
-    const newP   = params.p   !== undefined ? params.p   : 1
-    if (newQ)   sp.set('q',   newQ)
-    if (newCat) sp.set('cat', newCat)
-    if (newP > 1) sp.set('p', String(newP))
+    const newQ    = params.q    !== undefined ? params.q    : q
+    const newCat  = params.cat  !== undefined ? params.cat  : cat
+    const newP    = params.p    !== undefined ? params.p    : 1
+    const newSort = params.sort !== undefined ? params.sort : sort
+    const newDir  = params.dir  !== undefined ? params.dir  : dir
+    if (newQ)              sp.set('q',    newQ)
+    if (newCat)            sp.set('cat',  newCat)
+    if (newP > 1)          sp.set('p',    String(newP))
+    if (newSort !== 'nombre') sp.set('sort', newSort)
+    if (newDir  !== 'asc')    sp.set('dir',  newDir)
     startTransition(() => router.push(`/productos?${sp.toString()}`))
-  }, [q, cat, router])
+  }, [q, cat, sort, dir, router])
+
+  function handleSort(field: SortField) {
+    if (field === sort) {
+      navigate({ sort: field, dir: dir === 'asc' ? 'desc' : 'asc', p: 1 })
+    } else {
+      navigate({ sort: field, dir: field === 'updated_at' ? 'desc' : 'asc', p: 1 })
+    }
+  }
+
+  function formatRelativo(iso: string | null): string {
+    if (!iso) return '—'
+    const fecha = new Date(iso)
+    const dias  = differenceInDays(new Date(), fecha)
+    if (dias < 7) return formatDistanceToNow(fecha, { locale: es, addSuffix: true })
+    return `el ${format(fecha, 'dd/MM/yyyy', { locale: es })}`
+  }
+
+  function formatAbsoluto(iso: string | null): string {
+    if (!iso) return '—'
+    return format(new Date(iso), "dd/MM/yyyy HH:mm", { locale: es })
+  }
 
   function handleBusqueda(e: React.ChangeEvent<HTMLInputElement>) {
     const now = Date.now()
@@ -315,12 +348,33 @@ export default function ProductosCliente({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
-                  <th className="px-5 py-3.5">Nombre</th>
+                  <th className="px-5 py-3.5">
+                    <button
+                      onClick={() => handleSort('nombre')}
+                      className="flex items-center gap-1 hover:text-slate-600 transition-colors"
+                    >
+                      Nombre
+                      {sort === 'nombre'
+                        ? dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                    </button>
+                  </th>
                   <th className="px-5 py-3.5">Código</th>
                   <th className="px-5 py-3.5">Categoría</th>
                   <th className="px-5 py-3.5">P. Venta</th>
                   <th className="px-5 py-3.5">Stock</th>
                   <th className="px-5 py-3.5">Unidad</th>
+                  <th className="px-5 py-3.5">
+                    <button
+                      onClick={() => handleSort('updated_at')}
+                      className="flex items-center gap-1 hover:text-slate-600 transition-colors whitespace-nowrap"
+                    >
+                      Última modificación
+                      {sort === 'updated_at'
+                        ? dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                    </button>
+                  </th>
                   <th className="px-5 py-3.5">Estado</th>
                   <th className="px-5 py-3.5"></th>
                 </tr>
@@ -363,6 +417,9 @@ export default function ProductosCliente({
                         )}
                       </td>
                       <td className="px-5 py-4 text-slate-500 capitalize">{p.unidad}</td>
+                      <td className="px-5 py-4 text-xs text-slate-400 whitespace-nowrap">
+                        {formatRelativo(p.updated_at)}
+                      </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           p.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
@@ -464,9 +521,16 @@ export default function ProductosCliente({
               <h2 className="text-base font-semibold text-slate-900">
                 {productoEditando ? 'Editar producto' : 'Nuevo producto'}
               </h2>
-              <button onClick={cerrarModal} className="text-slate-400 hover:text-slate-600 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                {productoEditando?.updated_at && (
+                  <span className="text-xs text-slate-400">
+                    Última modificación: {formatAbsoluto(productoEditando.updated_at)}
+                  </span>
+                )}
+                <button onClick={cerrarModal} className="text-slate-400 hover:text-slate-600 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form id="form-producto" onSubmit={handleSubmit} className="overflow-y-auto">
