@@ -13,7 +13,7 @@ import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import { obtenerVentaDetalle } from '@/app/(dashboard)/comprobantes/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
 import { generarHTMLTicket } from '@/lib/ticket'
-import type { TipoComprobante, DatosCliente, PrintData } from '@/lib/ticket'
+import type { DatosCliente, PrintData } from '@/lib/ticket'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
