@@ -6,11 +6,13 @@ import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingCart, Banknote, Smartphone,
   CreditCard, Clock, Package, Printer, Calculator,
-  ChevronDown, ChevronRight, Star,
+  ChevronDown, ChevronRight, Star, FileText,
 } from 'lucide-react'
 import { crearVenta, buscarProductosPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
+import { generarHTMLTicket } from '@/lib/ticket'
+import type { TipoComprobante, DatosCliente, PrintData } from '@/lib/ticket'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -148,6 +150,7 @@ export default function PosCliente({
   const posContainerRef = useRef<HTMLDivElement>(null)
   const activeTabRef    = useRef<ActiveTab>('ventas_hoy')
   const toastIdRef      = useRef(0)
+  const lastPrintDataRef = useRef<PrintData | null>(null)
 
   // ─── Estado ────────────────────────────────────────────────────────────────
   const [activeTab,      setActiveTab]      = useState<ActiveTab>('ventas_hoy')
@@ -158,16 +161,23 @@ export default function PosCliente({
   )
   const [procesando,     setProcesando]     = useState(false)
   const [error,          setError]          = useState<string | null>(null)
-  const [ventaExitosa,   setVentaExitosa]   = useState<{ ventaId: string; total: number } | null>(null)
+  const [ventaExitosa,   setVentaExitosa]   = useState<{
+    ventaId: string; total: number
+    tipoComprobante: TipoComprobante
+    numeroComprobante?: string
+  } | null>(null)
   const [cantServicio,   setCantServicio]   = useState<Record<string, number>>({})
   // Ventas del turno: arranca con las del servidor, se actualiza en tiempo real con cada cobro
   const [ventasTurno,    setVentasTurno]    = useState<VentaTurno[]>(ventasTurnoInicial)
   // Ventas de hoy: para mostrar en el panel izquierdo
   const [ventasHoy,      setVentasHoy]      = useState<VentaHoy[]>(ventasHoyInicial)
   // Error temporal de stock (se auto-descarta)
-  const [stockError,     setStockError]     = useState<string | null>(null)
+  const [stockError,       setStockError]       = useState<string | null>(null)
   // Toasts de feedback del scanner
-  const [toasts, setToasts] = useState<{ id: number; type: 'success' | 'error'; msg: string }[]>([])
+  const [toasts,           setToasts]           = useState<{ id: number; type: 'success' | 'error'; msg: string }[]>([])
+  // Tipo de comprobante y modal de datos del cliente
+  const [tipoComprobante,  setTipoComprobante]  = useState<TipoComprobante>('ticket')
+  const [modalDatosCliente, setModalDatosCliente] = useState(false)
 
   // Mantiene activeTabRef sincronizado sin provocar re-render
   activeTabRef.current = activeTab
@@ -234,93 +244,8 @@ export default function PosCliente({
 
   useBarcodeScanner(stableOnBarcode, searchRef)
 
-  const generarHTMLTicket = useCallback((data: {
-    numeroVenta: number
-    items:       CartItem[]
-    total:       number
-    metodoPago:  string
-    vendedor?:   string
-  }): string => {
-    const cfg    = configTicket
-    const ancho  = (cfg?.ancho_papel ?? tamanoTicket) as string
-    const width  = ancho === '58mm' ? '54mm' : '76mm'
-    const copias = cfg?.copias_a_imprimir ?? 1
-
-    const fecha = new Date().toLocaleString('es-AR', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    })
-    const numStr = data.numeroVenta ? `#${String(data.numeroVenta).padStart(3, '0')}` : ''
-    const metodoLabel: Record<string, string> = {
-      efectivo: 'Efectivo', transferencia: 'Transferencia', debito: 'Débito', credito: 'Crédito',
-    }
-    const itemsHTML = data.items.map(i => {
-      const sub = i.precio_unitario * i.cantidad
-      return `<div class="row"><span>${i.cantidad}× ${i.nombre}</span><span>$${sub.toLocaleString('es-AR')}</span></div>`
-    }).join('')
-
-    const nombreComercio = cfg?.nombre_comercio || negocioNombre || 'Mi Negocio'
-
-    const cabecera = [
-      cfg?.mostrar_logo && cfg?.logo_url
-        ? `<img src="${cfg.logo_url}" style="display:block;max-width:80px;max-height:60px;margin:0 auto 4px;object-fit:contain">`
-        : '',
-      `<div class="c b big">${nombreComercio}</div>`,
-      cfg?.mostrar_cuit && cfg?.cuit
-        ? `<div class="c">CUIT: ${cfg.cuit}</div><div class="c">${cfg.condicion_iva}</div>`
-        : '',
-      cfg?.mostrar_direccion && cfg?.direccion
-        ? `<div class="c">${cfg.direccion}</div>`
-        : '',
-      cfg?.mostrar_telefono && cfg?.telefono
-        ? `<div class="c">Tel: ${cfg.telefono}</div>`
-        : '',
-    ].filter(Boolean).join('')
-
-    const pie = [
-      cfg?.mostrar_vendedor && data.vendedor
-        ? `<div>Vendedor: ${data.vendedor}</div>`
-        : '',
-      cfg?.mensaje_pie
-        ? `<hr class="sep"><div class="c">${cfg.mensaje_pie}</div>`
-        : `<hr class="sep"><div class="c">¡Gracias!</div>`,
-    ].filter(Boolean).join('')
-
-    const ticketBody = `
-${cabecera}
-<hr class="sep">
-<div>${fecha}</div>${numStr ? `<div>Venta <b>${numStr}</b></div>` : ''}
-<hr class="sep">
-${itemsHTML}
-<hr class="sep">
-<div class="row b"><span>TOTAL</span><span>$${data.total.toLocaleString('es-AR')}</span></div>
-<hr class="sep">
-<div>Método: ${metodoLabel[data.metodoPago] ?? data.metodoPago}</div>
-${pie}`
-
-    const copiasHTML = Array.from({ length: copias })
-      .map(() => `<div class="copia">${ticketBody}</div>`)
-      .join('')
-
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
-.c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
-.sep{border:none;border-top:1px dashed #555;margin:4px 0}
-.row{display:flex;justify-content:space-between;gap:4px;padding:1px 0}
-.row span:first-child{flex:1}
-.copia{page-break-after:always}.copia:last-child{page-break-after:auto}
-@media print{@page{margin:0;size:${ancho} auto}}
-</style></head><body>${copiasHTML}</body></html>`
-  }, [configTicket, tamanoTicket, negocioNombre])
-
-  const printTicket = useCallback((data: {
-    numeroVenta: number
-    items:       CartItem[]
-    total:       number
-    metodoPago:  string
-    vendedor?:   string
-  }) => {
-    const html  = generarHTMLTicket(data)
+  const printTicket = useCallback((data: PrintData) => {
+    const html = generarHTMLTicket(data, { configTicket, tamanoTicket, negocioNombre })
     const iframe = document.createElement('iframe')
     iframe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;border:0'
     document.body.appendChild(iframe)
@@ -332,7 +257,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
       iframe.contentWindow!.print()
       setTimeout(() => document.body.removeChild(iframe), 1500)
     }, 200)
-  }, [generarHTMLTicket])
+  }, [configTicket, tamanoTicket, negocioNombre])
 
   // Auto-foco en búsqueda cuando cambia de tab
   useEffect(() => {
@@ -520,8 +445,17 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
 
   // ─── Cobrar ────────────────────────────────────────────────────────────────
 
-  async function handleCobrar() {
+  function handleCobrar() {
     if (cart.length === 0 || procesando) return
+    if (tipoComprobante === 'factura_x') {
+      setModalDatosCliente(true)
+      return
+    }
+    ejecutarCobro(null)
+  }
+
+  async function ejecutarCobro(datos: DatosCliente | null) {
+    setModalDatosCliente(false)
     setProcesando(true)
     setError(null)
 
@@ -531,7 +465,9 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
         cantidad:        i.cantidad,
         precio_unitario: i.precio_unitario,
       })),
-      metodo_pago: metodoPago,
+      metodo_pago:       metodoPago,
+      tipo_comprobante:  tipoComprobante,
+      datos_cliente:     datos ?? undefined,
     })
 
     if (result.error) {
@@ -540,14 +476,25 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
       return
     }
 
-    // Actualizar ventas del turno y del día en tiempo real
     setVentasTurno((prev) => [...prev, { total, metodo_pago: metodoPago }])
-    const nuevaVentaHoy: VentaHoy = {
-      id:            result.ventaId!,
-      numero_venta:  result.numeroVenta ?? 0,
-      fecha:         new Date().toISOString(),
+
+    const printData: PrintData = {
+      numeroVenta:       result.numeroVenta ?? 0,
+      items:             cart.map(i => ({ nombre: i.nombre, cantidad: i.cantidad, precio_unitario: i.precio_unitario, unidad: i.unidad })),
       total,
-      metodo_pago:   metodoPago,
+      metodoPago,
+      tipoComprobante,
+      numeroComprobante: result.numeroComprobante,
+      datosCliente:      datos,
+    }
+    lastPrintDataRef.current = printData
+
+    const nuevaVentaHoy: VentaHoy = {
+      id:           result.ventaId!,
+      numero_venta: result.numeroVenta ?? 0,
+      fecha:        new Date().toISOString(),
+      total,
+      metodo_pago:  metodoPago,
       venta_items:  cart.map(item => ({
         id:              `${item.producto_id}-${Date.now()}`,
         cantidad:        item.cantidad,
@@ -557,10 +504,17 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
       })),
     }
     setVentasHoy((prev) => [nuevaVentaHoy, ...prev])
+
     if (imprimirTicketAuto) {
-      await printTicket({ numeroVenta: result.numeroVenta ?? 0, items: cart, total, metodoPago })
+      printTicket(printData)
     }
-    setVentaExitosa({ ventaId: result.ventaId!, total })
+
+    setVentaExitosa({
+      ventaId:           result.ventaId!,
+      total,
+      tipoComprobante,
+      numeroComprobante: result.numeroComprobante,
+    })
     setCart([])
     setProcesando(false)
   }
@@ -568,6 +522,7 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
   function nuevaVenta() {
     setVentaExitosa(null)
     setMetodoPago('efectivo')
+    setTipoComprobante('ticket')
     setBusqueda('')
     setTimeout(() => searchRef.current?.focus(), 0)
   }
@@ -816,12 +771,32 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                 <CheckCircle className="w-10 h-10 text-emerald-600" />
               </div>
               <h2 className="text-xl font-bold text-slate-900 mb-1">¡Venta registrada!</h2>
+              {ventaExitosa.tipoComprobante === 'factura_x' && (
+                <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full mt-1">
+                  Factura X
+                </span>
+              )}
               <p className="text-3xl font-bold text-emerald-600 mt-3 mb-1">
                 {ARS(ventaExitosa.total)}
               </p>
-              <p className="text-xs text-slate-400 font-mono mb-8">
-                #{ventaExitosa.ventaId.slice(-8).toUpperCase()}
-              </p>
+              {ventaExitosa.numeroComprobante ? (
+                <p className="text-sm font-mono text-slate-600 font-semibold mb-6">
+                  {ventaExitosa.numeroComprobante}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-400 font-mono mb-6">
+                  #{ventaExitosa.ventaId.slice(-8).toUpperCase()}
+                </p>
+              )}
+              {ventaExitosa.tipoComprobante !== 'ticket' && lastPrintDataRef.current && (
+                <button
+                  onClick={() => printTicket(lastPrintDataRef.current!)}
+                  className="w-full mb-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  Reimprimir Factura X
+                </button>
+              )}
               <button
                 onClick={nuevaVenta}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl transition-colors text-base"
@@ -951,6 +926,32 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
                   </div>
                 </div>
 
+                {/* Tipo de comprobante */}
+                <div className="px-5 py-4 border-b border-slate-200">
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-2.5">
+                    Comprobante
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'ticket'    as TipoComprobante, label: 'Ticket',    Icon: Printer   },
+                      { value: 'factura_x' as TipoComprobante, label: 'Factura X', Icon: FileText  },
+                    ] as const).map(({ value, label, Icon }) => (
+                      <button
+                        key={value}
+                        onClick={() => setTipoComprobante(value)}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                          tipoComprobante === value
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                            : 'border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Aviso de caja cerrada */}
                 {!cajaAbierta && (
                   <div className="mx-4 mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-3 rounded-xl">
@@ -994,6 +995,15 @@ body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6
           )}
         </div>
       </div>
+
+      {/* Modal datos del cliente para Factura X */}
+      {modalDatosCliente && (
+        <ModalDatosCliente
+          onConfirmar={ejecutarCobro}
+          onCancelar={() => setModalDatosCliente(false)}
+          procesando={procesando}
+        />
+      )}
 
       {/* Toasts de feedback del scanner */}
       <div className="fixed bottom-5 right-5 z-[200] flex flex-col gap-2 pointer-events-none">
@@ -1114,6 +1124,102 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
           )
         })}
       </ul>
+    </div>
+  )
+}
+
+// ─── Modal datos del cliente ──────────────────────────────────────────────────
+
+function ModalDatosCliente({
+  onConfirmar,
+  onCancelar,
+  procesando,
+}: {
+  onConfirmar: (datos: DatosCliente) => void
+  onCancelar:  () => void
+  procesando:  boolean
+}) {
+  const [razonSocial, setRazonSocial] = useState('')
+  const [cuitDni,     setCuitDni]     = useState('')
+  const [direccion,   setDireccion]   = useState('')
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!razonSocial.trim()) return
+    onConfirmar({
+      razon_social: razonSocial.trim(),
+      cuit_dni:     cuitDni.trim()   || null,
+      direccion:    direccion.trim() || null,
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4">
+        <div className="px-6 pt-6 pb-3">
+          <div className="flex items-center gap-2 mb-0.5">
+            <FileText className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-bold text-slate-900">Datos del cliente</h2>
+          </div>
+          <p className="text-sm text-slate-500">Para emitir Factura X</p>
+        </div>
+        <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+              Razón Social / Nombre <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              autoFocus
+              required
+              value={razonSocial}
+              onChange={e => setRazonSocial(e.target.value)}
+              placeholder="Ej: Juan García"
+              className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+              CUIT / DNI <span className="text-slate-400 font-normal text-xs">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={cuitDni}
+              onChange={e => setCuitDni(e.target.value)}
+              placeholder="Ej: 20-12345678-9"
+              className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+              Dirección <span className="text-slate-400 font-normal text-xs">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={direccion}
+              onChange={e => setDireccion(e.target.value)}
+              placeholder="Ej: Av. Corrientes 1234"
+              className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onCancelar}
+              className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!razonSocial.trim() || procesando}
+              className="flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold transition-colors"
+            >
+              {procesando ? 'Procesando...' : 'Confirmar y cobrar'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

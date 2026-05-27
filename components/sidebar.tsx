@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldAlert,
   Receipt,
+  FileText,
 } from 'lucide-react'
 import { signOut } from '@/app/login/actions'
 import type { Perfil } from '@/lib/permisos'
@@ -25,7 +26,8 @@ const NAV_ITEMS = [
   { label: 'Ventas',      href: '/ventas/nueva', icon: ShoppingCart,     seccion: 'ventas'      as const },
   { label: 'Proveedores', href: '/proveedores',  icon: Truck,            seccion: 'proveedores' as const },
   { label: 'Compras',     href: '/compras',      icon: ShoppingBag,      seccion: 'compras'     as const },
-  { label: 'Reportes',    href: '/reportes',     icon: BarChart3,        seccion: 'reportes'    as const },
+  { label: 'Reportes',       href: '/reportes',      icon: BarChart3,  seccion: 'reportes' as const },
+  { label: 'Comprobantes',   href: '/comprobantes',  icon: FileText,   seccion: 'ventas'   as const },
 ]
 
 export default function Sidebar({

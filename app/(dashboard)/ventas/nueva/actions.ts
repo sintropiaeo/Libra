@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { tieneAcceso } from '@/lib/permisos'
 import type { Perfil } from '@/lib/permisos'
+import type { TipoComprobante, DatosCliente } from '@/lib/ticket'
 
 export type ProductoPOS = {
   id: string
@@ -53,10 +54,12 @@ type ItemVenta = {
 type MetodoPago = 'efectivo' | 'transferencia' | 'debito' | 'credito'
 
 export async function crearVenta(payload: {
-  items: ItemVenta[]
-  metodo_pago: MetodoPago
-  notas?: string
-}): Promise<{ error?: string; ventaId?: string; numeroVenta?: number }> {
+  items:             ItemVenta[]
+  metodo_pago:       MetodoPago
+  notas?:            string
+  tipo_comprobante?: TipoComprobante
+  datos_cliente?:    DatosCliente
+}): Promise<{ error?: string; ventaId?: string; numeroVenta?: number; numeroComprobante?: string }> {
   const supabase = createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -86,13 +89,30 @@ export async function crearVenta(payload: {
     0
   )
 
+  // Generar número de comprobante si no es ticket simple
+  let numeroComprobante: string | null = null
+  const tipoComp = payload.tipo_comprobante ?? 'ticket'
+  if (tipoComp !== 'ticket') {
+    const letraMap: Record<string, string> = { factura_x: 'X' }
+    const letra = letraMap[tipoComp] ?? tipoComp.toUpperCase()
+    const { data: numData, error: numError } = await supabase
+      .rpc('siguiente_numero_comprobante', { p_tipo: tipoComp })
+    if (numError || numData == null) {
+      return { error: `Error al generar número de comprobante: ${numError?.message ?? 'desconocido'}` }
+    }
+    numeroComprobante = `${letra}-0001-${String(numData).padStart(8, '0')}`
+  }
+
   // 1. Crear la venta
   const { data: venta, error: ventaError } = await supabase
     .from('ventas')
     .insert({
       total,
-      metodo_pago: payload.metodo_pago,
-      notas: payload.notas?.trim() || null,
+      metodo_pago:        payload.metodo_pago,
+      notas:              payload.notas?.trim() || null,
+      tipo_comprobante:   tipoComp,
+      numero_comprobante: numeroComprobante,
+      datos_cliente:      payload.datos_cliente ?? null,
     })
     .select('id, numero_venta')
     .single()
@@ -120,5 +140,6 @@ export async function crearVenta(payload: {
 
   revalidatePath('/ventas')
   revalidatePath('/dashboard')
-  return { ventaId: venta.id, numeroVenta: venta.numero_venta }
+  revalidatePath('/comprobantes')
+  return { ventaId: venta.id, numeroVenta: venta.numero_venta, numeroComprobante: numeroComprobante ?? undefined }
 }
