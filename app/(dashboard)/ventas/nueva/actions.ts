@@ -143,3 +143,33 @@ export async function crearVenta(payload: {
   revalidatePath('/comprobantes')
   return { ventaId: venta.id, numeroVenta: venta.numero_venta, numeroComprobante: numeroComprobante ?? undefined }
 }
+
+export async function convertirVentaAFacturaX(
+  ventaId: string,
+  datosCliente: DatosCliente,
+): Promise<{ error?: string; numeroComprobante?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado.' }
+
+  const { data: numData, error: numError } = await supabase
+    .rpc('siguiente_numero_comprobante', { p_tipo: 'factura_x' })
+  if (numError || numData == null) {
+    return { error: `Error al generar número de comprobante: ${numError?.message ?? 'desconocido'}` }
+  }
+  const numeroComprobante = `X-0001-${String(numData).padStart(8, '0')}`
+
+  const { error: updateError } = await supabase
+    .from('ventas')
+    .update({
+      tipo_comprobante:   'factura_x',
+      numero_comprobante: numeroComprobante,
+      datos_cliente:      datosCliente,
+    })
+    .eq('id', ventaId)
+
+  if (updateError) return { error: updateError.message }
+
+  revalidatePath('/comprobantes')
+  return { numeroComprobante }
+}

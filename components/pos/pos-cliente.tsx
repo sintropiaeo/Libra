@@ -8,8 +8,9 @@ import {
   CreditCard, Clock, Package, Printer, Calculator,
   ChevronDown, ChevronRight, Star, FileText,
 } from 'lucide-react'
-import { crearVenta, buscarProductosPOS } from '@/app/(dashboard)/ventas/nueva/actions'
+import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
+import { obtenerVentaDetalle } from '@/app/(dashboard)/comprobantes/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
 import { generarHTMLTicket } from '@/lib/ticket'
 import type { TipoComprobante, DatosCliente, PrintData } from '@/lib/ticket'
@@ -150,8 +151,6 @@ export default function PosCliente({
   const posContainerRef = useRef<HTMLDivElement>(null)
   const activeTabRef    = useRef<ActiveTab>('ventas_hoy')
   const toastIdRef      = useRef(0)
-  const lastPrintDataRef = useRef<PrintData | null>(null)
-
   // ─── Estado ────────────────────────────────────────────────────────────────
   const [activeTab,      setActiveTab]      = useState<ActiveTab>('ventas_hoy')
   const [busqueda,       setBusqueda]       = useState('')
@@ -161,10 +160,8 @@ export default function PosCliente({
   )
   const [procesando,     setProcesando]     = useState(false)
   const [error,          setError]          = useState<string | null>(null)
-  const [ventaExitosa,   setVentaExitosa]   = useState<{
-    ventaId: string; total: number
-    tipoComprobante: TipoComprobante
-    numeroComprobante?: string
+  const [modalImpresion, setModalImpresion] = useState<{
+    ventaId: string; total: number; metodoPago: string; printData: PrintData
   } | null>(null)
   const [cantServicio,   setCantServicio]   = useState<Record<string, number>>({})
   // Ventas del turno: arranca con las del servidor, se actualiza en tiempo real con cada cobro
@@ -175,10 +172,6 @@ export default function PosCliente({
   const [stockError,       setStockError]       = useState<string | null>(null)
   // Toasts de feedback del scanner
   const [toasts,           setToasts]           = useState<{ id: number; type: 'success' | 'error'; msg: string }[]>([])
-  // Tipo de comprobante y modal de datos del cliente
-  const [tipoComprobante,  setTipoComprobante]  = useState<TipoComprobante>('ticket')
-  const [modalDatosCliente, setModalDatosCliente] = useState(false)
-
   // Mantiene activeTabRef sincronizado sin provocar re-render
   activeTabRef.current = activeTab
 
@@ -447,15 +440,10 @@ export default function PosCliente({
 
   function handleCobrar() {
     if (cart.length === 0 || procesando) return
-    if (tipoComprobante === 'factura_x') {
-      setModalDatosCliente(true)
-      return
-    }
-    ejecutarCobro(null)
+    ejecutarCobro()
   }
 
-  async function ejecutarCobro(datos: DatosCliente | null) {
-    setModalDatosCliente(false)
+  async function ejecutarCobro() {
     setProcesando(true)
     setError(null)
 
@@ -465,9 +453,8 @@ export default function PosCliente({
         cantidad:        i.cantidad,
         precio_unitario: i.precio_unitario,
       })),
-      metodo_pago:       metodoPago,
-      tipo_comprobante:  tipoComprobante,
-      datos_cliente:     datos ?? undefined,
+      metodo_pago:      metodoPago,
+      tipo_comprobante: 'ticket',
     })
 
     if (result.error) {
@@ -479,16 +466,12 @@ export default function PosCliente({
     setVentasTurno((prev) => [...prev, { total, metodo_pago: metodoPago }])
 
     const printData: PrintData = {
-      numeroVenta:       result.numeroVenta ?? 0,
-      items:             cart.map(i => ({ nombre: i.nombre, cantidad: i.cantidad, precio_unitario: i.precio_unitario, unidad: i.unidad })),
+      numeroVenta: result.numeroVenta ?? 0,
+      items:       cart.map(i => ({ nombre: i.nombre, cantidad: i.cantidad, precio_unitario: i.precio_unitario, unidad: i.unidad })),
       total,
       metodoPago,
-      tipoComprobante,
-      numeroComprobante: result.numeroComprobante,
-      datosCliente:      datos,
+      tipoComprobante: 'ticket',
     }
-    lastPrintDataRef.current = printData
-
     const nuevaVentaHoy: VentaHoy = {
       id:           result.ventaId!,
       numero_venta: result.numeroVenta ?? 0,
@@ -504,27 +487,45 @@ export default function PosCliente({
       })),
     }
     setVentasHoy((prev) => [nuevaVentaHoy, ...prev])
-
-    if (imprimirTicketAuto) {
-      printTicket(printData)
-    }
-
-    setVentaExitosa({
-      ventaId:           result.ventaId!,
-      total,
-      tipoComprobante,
-      numeroComprobante: result.numeroComprobante,
-    })
     setCart([])
     setProcesando(false)
+
+    setModalImpresion({
+      ventaId:    result.ventaId!,
+      total,
+      metodoPago,
+      printData,
+    })
   }
 
   function nuevaVenta() {
-    setVentaExitosa(null)
+    setModalImpresion(null)
     setMetodoPago('efectivo')
-    setTipoComprobante('ticket')
     setBusqueda('')
     setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  async function handleReimprimirVenta(ventaId: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await obtenerVentaDetalle(ventaId) as any
+    if (!raw) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (raw.venta_items ?? []).map((vi: any) => ({
+      nombre:          vi.productos?.nombre ?? 'Producto',
+      unidad:          vi.productos?.unidad ?? 'unidad',
+      cantidad:        vi.cantidad,
+      precio_unitario: vi.precio_unitario,
+    }))
+    const pd: PrintData = {
+      numeroVenta:       raw.numero_venta ?? 0,
+      items,
+      total:             Number(raw.total),
+      metodoPago:        raw.metodo_pago,
+      tipoComprobante:   raw.tipo_comprobante ?? 'ticket',
+      numeroComprobante: raw.numero_comprobante ?? undefined,
+      datosCliente:      raw.datos_cliente ?? null,
+    }
+    printTicket(pd)
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -718,7 +719,7 @@ export default function PosCliente({
 
           {/* Ventas de hoy */}
           {activeTab === 'ventas_hoy' && (
-            <VentasHoyPanel ventas={ventasHoy} />
+            <VentasHoyPanel ventas={ventasHoy} onReimprimir={handleReimprimirVenta} />
           )}
 
           {activeTab === 'servicios' && (
@@ -765,54 +766,8 @@ export default function PosCliente({
         {/* ── Panel derecho: carrito ── */}
         <div className="w-[420px] shrink-0 flex flex-col bg-white shadow-xl">
 
-          {ventaExitosa ? (
-            <div className="flex flex-col items-center justify-center flex-1 p-8 text-center">
-              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mb-5">
-                <CheckCircle className="w-10 h-10 text-emerald-600" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-1">¡Venta registrada!</h2>
-              {ventaExitosa.tipoComprobante === 'factura_x' && (
-                <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full mt-1">
-                  Factura X
-                </span>
-              )}
-              <p className="text-3xl font-bold text-emerald-600 mt-3 mb-1">
-                {ARS(ventaExitosa.total)}
-              </p>
-              {ventaExitosa.numeroComprobante ? (
-                <p className="text-sm font-mono text-slate-600 font-semibold mb-6">
-                  {ventaExitosa.numeroComprobante}
-                </p>
-              ) : (
-                <p className="text-xs text-slate-400 font-mono mb-6">
-                  #{ventaExitosa.ventaId.slice(-8).toUpperCase()}
-                </p>
-              )}
-              {ventaExitosa.tipoComprobante !== 'ticket' && lastPrintDataRef.current && (
-                <button
-                  onClick={() => printTicket(lastPrintDataRef.current!)}
-                  className="w-full mb-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
-                >
-                  <Printer className="w-4 h-4" />
-                  Reimprimir Factura X
-                </button>
-              )}
-              <button
-                onClick={nuevaVenta}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl transition-colors text-base"
-              >
-                Nueva venta
-              </button>
-              <Link
-                href="/ventas"
-                className="mt-3 text-sm text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                Ver historial →
-              </Link>
-            </div>
-          ) : (
-            <>
-              {/* Header carrito */}
+          <>
+            {/* Header carrito */}
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="w-4 h-4 text-slate-500" />
@@ -926,32 +881,6 @@ export default function PosCliente({
                   </div>
                 </div>
 
-                {/* Tipo de comprobante */}
-                <div className="px-5 py-4 border-b border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-2.5">
-                    Comprobante
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { value: 'ticket'    as TipoComprobante, label: 'Ticket',    Icon: Printer   },
-                      { value: 'factura_x' as TipoComprobante, label: 'Factura X', Icon: FileText  },
-                    ] as const).map(({ value, label, Icon }) => (
-                      <button
-                        key={value}
-                        onClick={() => setTipoComprobante(value)}
-                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                          tipoComprobante === value
-                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                            : 'border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4 shrink-0" />
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Aviso de caja cerrada */}
                 {!cajaAbierta && (
                   <div className="mx-4 mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-3 rounded-xl">
@@ -992,16 +921,19 @@ export default function PosCliente({
                 </div>
               </div>
             </>
-          )}
         </div>
       </div>
 
-      {/* Modal datos del cliente para Factura X */}
-      {modalDatosCliente && (
-        <ModalDatosCliente
-          onConfirmar={ejecutarCobro}
-          onCancelar={() => setModalDatosCliente(false)}
-          procesando={procesando}
+      {/* Modal de impresión post-venta */}
+      {modalImpresion && (
+        <ModalImpresion
+          ventaId={modalImpresion.ventaId}
+          total={modalImpresion.total}
+          metodoPago={modalImpresion.metodoPago}
+          printData={modalImpresion.printData}
+          imprimirTicketAuto={imprimirTicketAuto}
+          onImprimir={printTicket}
+          onCerrar={nuevaVenta}
         />
       )}
 
@@ -1042,11 +974,25 @@ const METODO_LABEL: Record<string, string> = {
   credito:       'Crédito',
 }
 
-function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
-  const [expandida, setExpandida] = useState<string | null>(null)
+function VentasHoyPanel({
+  ventas,
+  onReimprimir,
+}: {
+  ventas:       VentaHoy[]
+  onReimprimir: (ventaId: string) => Promise<void>
+}) {
+  const [expandida,   setExpandida]   = useState<string | null>(null)
+  const [reimpresoId, setReimpresoId] = useState<string | null>(null)
 
   const totalDia    = ventas.reduce((s, v) => s + v.total, 0)
   const cantidadDia = ventas.reduce((s, v) => s + v.venta_items.reduce((si, i) => si + i.cantidad, 0), 0)
+
+  async function handleReimprimir(e: React.MouseEvent, ventaId: string) {
+    e.stopPropagation()
+    setReimpresoId(ventaId)
+    await onReimprimir(ventaId)
+    setReimpresoId(null)
+  }
 
   if (ventas.length === 0) {
     return (
@@ -1082,9 +1028,9 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
 
           return (
             <li key={v.id}>
-              <button
+              <div
                 onClick={() => setExpandida(isOpen ? null : v.id)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -1100,11 +1046,22 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
                     {hora} · {itemCount} ítem{itemCount !== 1 && 's'}
                   </p>
                 </div>
+                <button
+                  onClick={(e) => handleReimprimir(e, v.id)}
+                  disabled={reimpresoId === v.id}
+                  title="Reimprimir"
+                  className="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors shrink-0 disabled:opacity-50"
+                >
+                  {reimpresoId === v.id
+                    ? <span className="w-3.5 h-3.5 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin block" />
+                    : <Printer className="w-3.5 h-3.5" />
+                  }
+                </button>
                 {isOpen
                   ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
                   : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                 }
-              </button>
+              </div>
 
               {isOpen && (
                 <div className="px-5 pb-3 bg-slate-50 space-y-1.5">
@@ -1128,97 +1085,236 @@ function VentasHoyPanel({ ventas }: { ventas: VentaHoy[] }) {
   )
 }
 
-// ─── Modal datos del cliente ──────────────────────────────────────────────────
+// ─── Modal de impresión post-venta ───────────────────────────────────────────
 
-function ModalDatosCliente({
-  onConfirmar,
-  onCancelar,
-  procesando,
+function ModalImpresion({
+  ventaId,
+  total,
+  metodoPago,
+  printData,
+  imprimirTicketAuto,
+  onImprimir,
+  onCerrar,
 }: {
-  onConfirmar: (datos: DatosCliente) => void
-  onCancelar:  () => void
-  procesando:  boolean
+  ventaId:            string
+  total:              number
+  metodoPago:         string
+  printData:          PrintData
+  imprimirTicketAuto: boolean
+  onImprimir:         (data: PrintData) => void
+  onCerrar:           () => void
 }) {
-  const [razonSocial, setRazonSocial] = useState('')
-  const [cuitDni,     setCuitDni]     = useState('')
-  const [direccion,   setDireccion]   = useState('')
+  const ticketBtnRef = useRef<HTMLButtonElement>(null)
+  const [vista,        setVista]        = useState<'opciones' | 'factura_x'>('opciones')
+  const [razonSocial,  setRazonSocial]  = useState('')
+  const [cuitDni,      setCuitDni]      = useState('')
+  const [direccion,    setDireccion]    = useState('')
+  const [convirtiendo, setConvirtiendo] = useState(false)
+  const [errorConv,    setErrorConv]    = useState<string | null>(null)
 
-  function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (imprimirTicketAuto) ticketBtnRef.current?.focus()
+  }, [imprimirTicketAuto])
+
+  function handleTicket() {
+    onImprimir(printData)
+    onCerrar()
+  }
+
+  async function handleFacturaXConfirmar(e: React.FormEvent) {
     e.preventDefault()
     if (!razonSocial.trim()) return
-    onConfirmar({
+    setConvirtiendo(true)
+    setErrorConv(null)
+    const datos: DatosCliente = {
       razon_social: razonSocial.trim(),
       cuit_dni:     cuitDni.trim()   || null,
       direccion:    direccion.trim() || null,
-    })
+    }
+    const res = await convertirVentaAFacturaX(ventaId, datos)
+    setConvirtiendo(false)
+    if (res.error) {
+      setErrorConv(res.error)
+      return
+    }
+    const facturaData: PrintData = {
+      ...printData,
+      tipoComprobante:   'factura_x',
+      numeroComprobante: res.numeroComprobante,
+      datosCliente:      datos,
+    }
+    onImprimir(facturaData)
+    onCerrar()
   }
 
+  const numStr = printData.numeroVenta
+    ? `#${String(printData.numeroVenta).padStart(3, '0')}`
+    : ''
+
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4">
-        <div className="px-6 pt-6 pb-3">
-          <div className="flex items-center gap-2 mb-0.5">
-            <FileText className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-bold text-slate-900">Datos del cliente</h2>
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onCerrar() }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+
+        {/* Header verde */}
+        <div className="bg-emerald-500 px-6 py-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+              <CheckCircle className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-lg leading-tight">Venta confirmada</p>
+              {numStr && <p className="text-white/70 text-sm">{numStr}</p>}
+            </div>
           </div>
-          <p className="text-sm text-slate-500">Para emitir Factura X</p>
+          <button
+            onClick={onCerrar}
+            className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
         </div>
-        <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
+
+        {/* Resumen */}
+        <div className="px-6 py-4 bg-slate-50 flex items-center justify-between border-b border-slate-100">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Razón Social / Nombre <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              autoFocus
-              required
-              value={razonSocial}
-              onChange={e => setRazonSocial(e.target.value)}
-              placeholder="Ej: Juan García"
-              className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+            <p className="text-xs text-slate-500 font-medium">Total cobrado</p>
+            <p className="text-2xl font-bold text-slate-900">{ARS(total)}</p>
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              CUIT / DNI <span className="text-slate-400 font-normal text-xs">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              value={cuitDni}
-              onChange={e => setCuitDni(e.target.value)}
-              placeholder="Ej: 20-12345678-9"
-              className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Dirección <span className="text-slate-400 font-normal text-xs">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              value={direccion}
-              onChange={e => setDireccion(e.target.value)}
-              placeholder="Ej: Av. Corrientes 1234"
-              className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div className="flex gap-3 pt-1">
+          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${METODO_BADGE[metodoPago] ?? 'bg-slate-100 text-slate-600'}`}>
+            {METODO_LABEL[metodoPago] ?? metodoPago}
+          </span>
+        </div>
+
+        {vista === 'opciones' ? (
+          /* ─── Vista: opciones de comprobante ─── */
+          <div className="p-5 space-y-2.5">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide text-center">
+              ¿Qué comprobante querés imprimir?
+            </p>
+
             <button
-              type="button"
-              onClick={onCancelar}
-              className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors"
+              ref={ticketBtnRef}
+              onClick={handleTicket}
+              className="w-full flex items-center gap-4 px-5 py-[18px] rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold transition-all focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
             >
-              Cancelar
+              <Printer className="w-6 h-6 shrink-0" />
+              <div className="text-left">
+                <p className="text-[15px] font-bold">Ticket interno</p>
+                <p className="text-xs text-blue-200 font-normal">Comprobante simple</p>
+              </div>
             </button>
+
             <button
-              type="submit"
-              disabled={!razonSocial.trim() || procesando}
-              className="flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold transition-colors"
+              onClick={() => setVista('factura_x')}
+              className="w-full flex items-center gap-4 px-5 py-[18px] rounded-xl bg-violet-600 hover:bg-violet-700 active:scale-[0.98] text-white font-bold transition-all"
             >
-              {procesando ? 'Procesando...' : 'Confirmar y cobrar'}
+              <FileText className="w-6 h-6 shrink-0" />
+              <div className="text-left">
+                <p className="text-[15px] font-bold">Factura X</p>
+                <p className="text-xs text-violet-200 font-normal">Con datos del cliente</p>
+              </div>
+            </button>
+
+            <button
+              onClick={onCerrar}
+              className="w-full flex items-center gap-4 px-5 py-[18px] rounded-xl border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] text-slate-600 font-semibold transition-all"
+            >
+              <X className="w-6 h-6 shrink-0" />
+              <div className="text-left">
+                <p className="text-[15px] font-semibold">Sin comprobante</p>
+                <p className="text-xs text-slate-400 font-normal">Solo registrar la venta</p>
+              </div>
             </button>
           </div>
-        </form>
+        ) : (
+          /* ─── Vista: formulario Factura X ─── */
+          <form onSubmit={handleFacturaXConfirmar} className="p-5 space-y-3.5">
+            <div className="flex items-center gap-3 mb-1">
+              <button
+                type="button"
+                onClick={() => { setVista('opciones'); setErrorConv(null) }}
+                className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 transition-colors"
+              >
+                ← Volver
+              </button>
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-violet-600" />
+                <h3 className="text-sm font-bold text-slate-800">Datos del cliente</h3>
+              </div>
+            </div>
+
+            {errorConv && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {errorConv}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                Razón Social / Nombre <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                autoFocus
+                required
+                value={razonSocial}
+                onChange={e => setRazonSocial(e.target.value)}
+                placeholder="Ej: Juan García"
+                className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                CUIT / DNI <span className="text-xs text-slate-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={cuitDni}
+                onChange={e => setCuitDni(e.target.value)}
+                placeholder="Ej: 20-12345678-9"
+                className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                Dirección <span className="text-xs text-slate-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={direccion}
+                onChange={e => setDireccion(e.target.value)}
+                placeholder="Ej: Av. Corrientes 1234"
+                className="w-full px-4 py-3 text-base text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => { setVista('opciones'); setErrorConv(null) }}
+                className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={!razonSocial.trim() || convirtiendo}
+                className="flex-1 px-4 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold transition-colors"
+              >
+                {convirtiendo ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Procesando...
+                  </span>
+                ) : 'Confirmar y emitir'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )
