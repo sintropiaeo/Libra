@@ -44,17 +44,40 @@ async function getPublicTableNames(): Promise<string[]> {
   return Object.keys(spec.definitions ?? {}).sort()
 }
 
+// ─── Prioridad de tablas ──────────────────────────────────────────────────────
+// Las tablas críticas se exportan primero para garantizar su backup aunque
+// el tiempo se agote antes de procesar el resto.
+
+const TABLAS_PRIORITARIAS = [
+  'productos',
+  'ventas',
+  'venta_items',
+  'categorias',
+  'proveedores',
+  'perfiles',
+  'negocio_config',
+  'configuracion_ticket',
+]
+
+function ordenarTablas(nombres: string[]): string[] {
+  const set    = new Set(nombres)
+  const prio   = TABLAS_PRIORITARIAS.filter(t => set.has(t))
+  const resto  = nombres.filter(t => !TABLAS_PRIORITARIAS.includes(t)).sort()
+  return [...prio, ...resto]
+}
+
 // ─── HTML del email ───────────────────────────────────────────────────────────
 
 function buildEmailHtml(
-  negocio:      string,
-  fecha:        string,
-  hora:         string,
-  detalle:      Record<string, number>,
+  negocio:        string,
+  fecha:          string,
+  hora:           string,
+  detalle:        Record<string, number>,
   totalRegistros: number,
+  parcial:        boolean,
+  omitidas:       string[],
 ): string {
   const rows = Object.entries(detalle)
-    .sort(([a], [b]) => a.localeCompare(b))
     .map(
       ([tabla, n]) =>
         `<tr>
@@ -64,6 +87,16 @@ function buildEmailHtml(
     )
     .join('')
 
+  const alertaParcial = parcial ? `
+    <div style="margin:16px 28px 0;padding:12px 16px;background:#fef9c3;border:1px solid #fde047;border-radius:8px">
+      <p style="margin:0;font-size:13px;color:#713f12;font-weight:600">⚠️ Backup parcial — plan Free (timeout 10s)</p>
+      <p style="margin:4px 0 0;font-size:12px;color:#92400e">
+        Tablas no exportadas por tiempo: <strong>${omitidas.join(', ')}</strong><br>
+        Las tablas críticas (productos, ventas) siempre se procesan primero.
+        Para backup completo, pasá al plan Pro de Vercel.
+      </p>
+    </div>` : ''
+
   return `
 <!DOCTYPE html>
 <html lang="es">
@@ -72,17 +105,19 @@ function buildEmailHtml(
   <div style="max-width:560px;margin:32px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)">
 
     <!-- Header -->
-    <div style="background:#1e40af;padding:24px 28px;display:flex;align-items:center;gap:12px">
-      <span style="font-size:28px">🗄️</span>
+    <div style="background:${parcial ? '#b45309' : '#1e40af'};padding:24px 28px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:28px">${parcial ? '⚠️' : '🗄️'}</span>
       <div>
-        <h1 style="margin:0;color:white;font-size:18px;font-weight:700">Backup Semanal — ${negocio}</h1>
-        <p style="margin:4px 0 0;color:#93c5fd;font-size:13px">${fecha} · ${hora} (hora Argentina)</p>
+        <h1 style="margin:0;color:white;font-size:18px;font-weight:700">${parcial ? 'Backup Parcial' : 'Backup Semanal'} — ${negocio}</h1>
+        <p style="margin:4px 0 0;color:${parcial ? '#fde68a' : '#93c5fd'};font-size:13px">${fecha} · ${hora} (hora Argentina)</p>
       </div>
     </div>
 
+    ${alertaParcial}
+
     <!-- Resumen -->
     <div style="padding:20px 28px 0">
-      <p style="margin:0 0 4px;color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Resumen del backup</p>
+      <p style="margin:0 0 4px;color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Tablas exportadas</p>
     </div>
 
     <table style="width:100%;border-collapse:collapse">
@@ -95,7 +130,7 @@ function buildEmailHtml(
       <tbody>${rows}</tbody>
       <tfoot>
         <tr style="background:#eff6ff">
-          <td style="padding:10px 14px;font-weight:700;color:#1e40af">Total</td>
+          <td style="padding:10px 14px;font-weight:700;color:#1e40af">Total exportado</td>
           <td style="padding:10px 14px;text-align:right;font-weight:700;color:#1e40af">${totalRegistros.toLocaleString('es-AR')}</td>
         </tr>
       </tfoot>
@@ -125,15 +160,29 @@ async function ejecutarBackup() {
 
   const supabase = createAdminClient()
 
-  // 1. Descubrir tablas
-  const tableNames = await getPublicTableNames()
+  // 1. Descubrir tablas y ordenar por prioridad
+  const allTableNames    = await getPublicTableNames()
+  const tableNamesOrden  = ordenarTablas(allTableNames)
 
-  // 2. Exportar cada tabla (sin límite artificial para backup completo)
-  const tablas: Record<string, unknown[]>  = {}
-  const detalle: Record<string, number>    = {}
+  // 2. Exportar tablas con presupuesto de tiempo
+  // Vercel free tier = 10s timeout. Reservamos 3s para armar JSON + enviar email.
+  const DEADLINE_MS   = 7_000
+  const inicio        = Date.now()
+  const tablas: Record<string, unknown[]> = {}
+  const detalle: Record<string, number>   = {}
+  const tablasOmitidas: string[]          = []
   let totalRegistros = 0
 
-  for (const tableName of tableNames) {
+  for (let i = 0; i < tableNamesOrden.length; i++) {
+    const tableName = tableNamesOrden[i]
+
+    // Verificar tiempo restante antes de empezar cada tabla
+    if (Date.now() - inicio > DEADLINE_MS) {
+      tablasOmitidas.push(...tableNamesOrden.slice(i))
+      console.warn(`[backup] Tiempo agotado. Omitidas: ${tablasOmitidas.join(', ')}`)
+      break
+    }
+
     // Paginar de a 1.000 (límite max-rows de PostgREST en Supabase hosted)
     let allRows: unknown[] = []
     let from = 0
@@ -141,6 +190,15 @@ async function ejecutarBackup() {
     let done = false
 
     while (!done) {
+      if (Date.now() - inicio > DEADLINE_MS) {
+        // Tiempo agotado a mitad de tabla: guardar lo acumulado hasta ahora
+        console.warn(`[backup] Tiempo agotado exportando "${tableName}" en fila ${from}`)
+        tablasOmitidas.push(...tableNamesOrden.slice(i + 1))
+        done = true
+        i = tableNamesOrden.length  // fuerza salida del for
+        break
+      }
+
       const { data, error } = await supabase
         .from(tableName)
         .select('*')
@@ -161,11 +219,13 @@ async function ejecutarBackup() {
     totalRegistros    += allRows.length
   }
 
-  // 3. Obtener nombre del negocio (tabla configuracion_negocio si existe)
+  const esParcial = tablasOmitidas.length > 0
+
+  // 3. Obtener nombre del negocio
   let negocioNombre = 'Libra'
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: cfg } = await (supabase as any).from('configuracion_negocio').select('nombre').maybeSingle()
+    const { data: cfg } = await (supabase as any).from('negocio_config').select('nombre').maybeSingle()
     if (cfg?.nombre) negocioNombre = cfg.nombre
   } catch { /* tabla puede no existir */ }
 
@@ -181,22 +241,26 @@ async function ejecutarBackup() {
   const backupObj = {
     fecha,
     hora,
-    negocio:  negocioNombre,
-    generado: ahora.toISOString(),
+    negocio:         negocioNombre,
+    generado:        ahora.toISOString(),
+    parcial:         esParcial,
+    tablas_omitidas: esParcial ? tablasOmitidas : undefined,
     tablas,
     resumen: {
-      total_tablas:    tableNames.length,
-      total_registros: totalRegistros,
-      tablas_detalle:  detalle,
+      total_tablas:      tableNamesOrden.length,
+      tablas_exportadas: Object.keys(tablas).length,
+      tablas_omitidas:   tablasOmitidas,
+      total_registros:   totalRegistros,
+      tablas_detalle:    detalle,
     },
   }
 
   const jsonString = JSON.stringify(backupObj, null, 2)
-  const filename   = `backup-${fecha}.json`
+  const filename   = `backup-${fecha}${esParcial ? '-parcial' : ''}.json`
 
   // 5. Enviar por email con Resend
   const resend = new Resend(resendKey)
-  const html   = buildEmailHtml(negocioNombre, fecha, hora, detalle, totalRegistros)
+  const html   = buildEmailHtml(negocioNombre, fecha, hora, detalle, totalRegistros, esParcial, tablasOmitidas)
 
   const { error: emailError } = await resend.emails.send({
     from:        fromEmail,
@@ -217,7 +281,7 @@ async function ejecutarBackup() {
 
   return {
     success:         true,
-    tablas:          tableNames.length,
+    tablas:          allTableNames.length,
     registros_total: totalRegistros,
     fecha,
     tablas_detalle:  detalle,
