@@ -58,7 +58,7 @@ export default async function DashboardLayout({
       <div className="flex-1 ml-64 min-w-0">
         {children}
       </div>
-      {perfil.rol === 'admin' && <BienvenidaModal perfilId={perfil.id} />}
+      {(perfil.rol === 'admin' || perfil.rol === 'super_admin') && <BienvenidaModal perfilId={perfil.id} />}
     </div>
   )
 }

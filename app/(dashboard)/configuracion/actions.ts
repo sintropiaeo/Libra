@@ -8,7 +8,7 @@ import { PERMISOS_DEFAULT } from '@/lib/permisos'
 
 // ─── Helper: verificar que el usuario en sesión es admin ─────────────────
 
-async function verificarAdmin(): Promise<string | null> {
+async function verificarAdmin(): Promise<{ userId: string; negocioId: string } | null> {
   const supabase = createClient()
   const {
     data: { user },
@@ -17,48 +17,52 @@ async function verificarAdmin(): Promise<string | null> {
 
   const { data } = await supabase
     .from('perfiles')
-    .select('rol')
+    .select('rol, negocio_id')
     .eq('user_id', user.id)
     .single()
 
-  return data?.rol === 'admin' ? user.id : null
+  if (!data || !['admin', 'super_admin'].includes(data.rol)) return null
+  return { userId: user.id, negocioId: data.negocio_id }
 }
 
 // ─── Empleados ────────────────────────────────────────────────────────────
 
 export async function crearEmpleado(formData: FormData): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const nombre   = (formData.get('nombre')   as string | null)?.trim()
   const email    = (formData.get('email')    as string | null)?.trim()
   const password = (formData.get('password') as string | null)?.trim()
+  const rol      = (formData.get('rol')      as string | null)?.trim() ?? 'cajero'
 
   if (!nombre || !email || !password) return { error: 'Completá todos los campos' }
   if (password.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
+  if (!['admin', 'cajero'].includes(rol)) return { error: 'Rol inválido' }
 
   const supabase = createAdminClient()
 
-  // Crear usuario en auth
+  // Crear usuario en auth con metadata para middleware
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
+    app_metadata: { rol, negocio_id: admin.negocioId },
   })
   if (authError) return { error: authError.message }
 
-  // Crear perfil
+  // Crear perfil vinculado al negocio del admin que lo crea
   const { error: perfilError } = await supabase.from('perfiles').insert({
-    user_id: authData.user.id,
+    user_id:    authData.user.id,
     nombre,
     email,
-    rol:      'empleado',
-    permisos: PERMISOS_DEFAULT,
-    activo:   true,
+    rol,
+    permisos:   rol === 'cajero' ? PERMISOS_DEFAULT : {},
+    activo:     true,
+    negocio_id: admin.negocioId,
   })
 
   if (perfilError) {
-    // Rollback: eliminar el usuario creado
     await supabase.auth.admin.deleteUser(authData.user.id)
     return { error: perfilError.message }
   }
@@ -67,18 +71,38 @@ export async function crearEmpleado(formData: FormData): Promise<{ error?: strin
   return {}
 }
 
+export async function actualizarRolEmpleado(
+  perfilId: string,
+  rol: 'admin' | 'cajero'
+): Promise<{ error?: string }> {
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
+
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('perfiles')
+    .update({ rol })
+    .eq('id', perfilId)
+    .eq('negocio_id', admin.negocioId)
+
+  if (error) return { error: error.message }
+  revalidatePath('/configuracion')
+  return {}
+}
+
 export async function actualizarPermisosEmpleado(
   perfilId: string,
   permisos: PermisosEmpleado
 ): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('perfiles')
     .update({ permisos })
     .eq('id', perfilId)
+    .eq('negocio_id', admin.negocioId)
 
   if (error) return { error: error.message }
   revalidatePath('/configuracion')
@@ -89,14 +113,15 @@ export async function toggleActivoEmpleado(
   perfilId: string,
   activo: boolean
 ): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('perfiles')
     .update({ activo })
     .eq('id', perfilId)
+    .eq('negocio_id', admin.negocioId)
 
   if (error) return { error: error.message }
   revalidatePath('/configuracion')
@@ -106,8 +131,8 @@ export async function toggleActivoEmpleado(
 // ─── Negocio ──────────────────────────────────────────────────────────────
 
 export async function guardarNegocio(formData: FormData): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
 
@@ -116,7 +141,6 @@ export async function guardarNegocio(formData: FormData): Promise<{ error?: stri
   const logoFile = formData.get('logo') as File | null
 
   if (logoFile && logoFile.size > 0) {
-    // Crear bucket si no existe
     await supabase.storage
       .createBucket('logos', { public: true })
       .catch(() => {})
@@ -146,12 +170,12 @@ export async function guardarNegocio(formData: FormData): Promise<{ error?: stri
   }
   if (logo_url) updates.logo_url = logo_url
 
-  // negocio_config es un singleton — actualizamos la primera fila
   const { data: existing } = await supabase
     .from('negocio_config')
     .select('id')
+    .eq('negocio_id', admin.negocioId)
     .limit(1)
-    .single()
+    .maybeSingle()
 
   let error
   if (existing) {
@@ -160,7 +184,9 @@ export async function guardarNegocio(formData: FormData): Promise<{ error?: stri
       .update(updates)
       .eq('id', existing.id))
   } else {
-    ;({ error } = await supabase.from('negocio_config').insert(updates))
+    ;({ error } = await supabase
+      .from('negocio_config')
+      .insert({ ...updates, negocio_id: admin.negocioId }))
   }
 
   if (error) return { error: error.message }
@@ -173,15 +199,16 @@ export async function guardarNegocio(formData: FormData): Promise<{ error?: stri
 export async function guardarMetodosPago(
   metodos: string[]
 ): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
   const { data: existing } = await supabase
     .from('negocio_config')
     .select('id')
+    .eq('negocio_id', admin.negocioId)
     .limit(1)
-    .single()
+    .maybeSingle()
 
   let error
   if (existing) {
@@ -192,7 +219,7 @@ export async function guardarMetodosPago(
   } else {
     ;({ error } = await supabase
       .from('negocio_config')
-      .insert({ metodos_pago: metodos }))
+      .insert({ metodos_pago: metodos, negocio_id: admin.negocioId }))
   }
 
   if (error) return { error: error.message }
@@ -204,11 +231,13 @@ export async function guardarMetodosPago(
 // ─── Categorías ───────────────────────────────────────────────────────────
 
 export async function crearCategoria(nombre: string): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
-  const { error } = await supabase.from('categorias').insert({ nombre: nombre.trim() })
+  const { error } = await supabase
+    .from('categorias')
+    .insert({ nombre: nombre.trim(), negocio_id: admin.negocioId })
   if (error) return { error: error.message }
 
   revalidatePath('/configuracion')
@@ -220,14 +249,15 @@ export async function actualizarCategoria(
   id: string,
   nombre: string
 ): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
   const { error } = await supabase
     .from('categorias')
     .update({ nombre: nombre.trim() })
     .eq('id', id)
+    .eq('negocio_id', admin.negocioId)
 
   if (error) return { error: error.message }
   revalidatePath('/configuracion')
@@ -236,11 +266,15 @@ export async function actualizarCategoria(
 }
 
 export async function eliminarCategoria(id: string): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
-  const { error } = await supabase.from('categorias').delete().eq('id', id)
+  const { error } = await supabase
+    .from('categorias')
+    .delete()
+    .eq('id', id)
+    .eq('negocio_id', admin.negocioId)
   if (error) return { error: error.message }
 
   revalidatePath('/configuracion')
@@ -253,19 +287,20 @@ export async function guardarDispositivos(payload: {
   tamano_ticket:        string
   sonido_escaneo:       boolean
 }): Promise<{ error?: string }> {
-  const adminId = await verificarAdmin()
-  if (!adminId) return { error: 'Sin permisos' }
+  const admin = await verificarAdmin()
+  if (!admin) return { error: 'Sin permisos' }
 
   const supabase = createAdminClient()
   const { data: existing } = await supabase
     .from('negocio_config')
     .select('id')
+    .eq('negocio_id', admin.negocioId)
     .limit(1)
     .maybeSingle()
 
   const { error } = existing
     ? await supabase.from('negocio_config').update(payload).eq('id', existing.id)
-    : await supabase.from('negocio_config').insert(payload)
+    : await supabase.from('negocio_config').insert({ ...payload, negocio_id: admin.negocioId })
 
   if (error) return { error: error.message }
   revalidatePath('/configuracion')

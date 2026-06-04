@@ -1,6 +1,6 @@
 // ─── Tipos ─────────────────────────────────────────────────────────────────
 
-export type Rol = 'super_admin' | 'admin' | 'empleado'
+export type Rol = 'super_admin' | 'admin' | 'cajero' | 'empleado'
 
 export interface PermisosEmpleado {
   dashboard:    boolean
@@ -19,6 +19,7 @@ export interface Perfil {
   rol:         Rol
   permisos:    PermisosEmpleado
   activo:      boolean
+  negocio_id:  string
   created_at:  string
 }
 
@@ -72,7 +73,7 @@ export const TODOS_LOS_METODOS: { id: string; nombre: string }[] = [
 
 // ─── Comprobadores de acceso ───────────────────────────────────────────────
 
-type Seccion =
+export type Seccion =
   | 'dashboard'
   | 'productos'
   | 'ventas'
@@ -80,6 +81,8 @@ type Seccion =
   | 'compras'
   | 'reportes'
   | 'configuracion'
+  | 'comprobantes'
+  | 'caja'
   | 'super_admin'
 
 export function esSuperAdmin(perfil: Perfil | null): boolean {
@@ -88,11 +91,24 @@ export function esSuperAdmin(perfil: Perfil | null): boolean {
 
 export function tieneAcceso(perfil: Perfil | null, seccion: Seccion): boolean {
   if (!perfil || !perfil.activo) return false
-  // super_admin tiene acceso a todo
+
   if (perfil.rol === 'super_admin') return true
-  if (perfil.rol === 'admin') {
-    return seccion !== 'super_admin'
+
+  if (perfil.rol === 'admin') return seccion !== 'super_admin'
+
+  // cajero: permisos fijos, no configurables
+  if (perfil.rol === 'cajero') {
+    switch (seccion) {
+      case 'dashboard':     return true
+      case 'ventas':        return true
+      case 'productos':     return true
+      case 'comprobantes':  return true
+      case 'caja':          return true
+      default:              return false
+    }
   }
+
+  // empleado (rol legacy): permisos configurables via JSONB
   if (seccion === 'configuracion' || seccion === 'super_admin') return false
 
   const p = perfil.permisos
@@ -110,11 +126,21 @@ export function tieneAcceso(perfil: Perfil | null, seccion: Seccion): boolean {
 export function puedeEditarProductos(perfil: Perfil | null): boolean {
   if (!perfil) return false
   if (perfil.rol === 'super_admin' || perfil.rol === 'admin') return true
+  if (perfil.rol === 'cajero') return false
   return perfil.permisos.productos === 'editar'
 }
 
 export function puedeRegistrarCompras(perfil: Perfil | null): boolean {
   if (!perfil) return false
   if (perfil.rol === 'super_admin' || perfil.rol === 'admin') return true
+  if (perfil.rol === 'cajero') return false
   return perfil.permisos.compras === 'registrar'
+}
+
+export function esCajero(perfil: Perfil | null): boolean {
+  return perfil?.rol === 'cajero'
+}
+
+export function esAdmin(perfil: Perfil | null): boolean {
+  return perfil?.rol === 'admin' || perfil?.rol === 'super_admin'
 }

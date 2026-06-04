@@ -35,18 +35,33 @@ export async function middleware(request: NextRequest) {
   const rutasPublicas = ['/login', '/registro', '/auth']
   const esPublica = rutasPublicas.some(r => pathname.startsWith(r))
 
-  // Sin sesión y no es ruta pública → redirigir a /login
+  // Sin sesión → redirigir a /login
   if (!user && !esPublica) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Con sesión y está en /login → redirigir al dashboard
+  // Con sesión en /login → redirigir al dashboard
   if (user && pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
+  }
+
+  // Protección para cajeros — usa app_metadata.rol (disponible en el JWT,
+  // sin necesidad de un query adicional a la DB)
+  // Se establece en crearEmpleado() al crear el usuario con auth.admin.createUser()
+  if (user) {
+    const rolMetadata = user.app_metadata?.rol as string | undefined
+    if (rolMetadata === 'cajero') {
+      const rutasRestringidas = ['/proveedores', '/compras', '/configuracion', '/reportes', '/super-admin']
+      if (rutasRestringidas.some(r => pathname.startsWith(r))) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/ventas/nueva'
+        return NextResponse.redirect(url)
+      }
+    }
   }
 
   return supabaseResponse

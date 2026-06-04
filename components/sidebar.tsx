@@ -133,15 +133,20 @@ export default function Sidebar({
             {perfil.nombre}
           </p>
           <p className="text-slate-500 text-xs truncate">{userEmail}</p>
-          {/* Badge: super_admin se muestra como Administrador normal */}
           <span
             className={`inline-block text-xs px-1.5 py-0.5 rounded mt-1 font-medium ${
-              perfil.rol === 'empleado'
-                ? 'bg-slate-700 text-slate-400'
-                : 'bg-blue-900/60 text-blue-300'
+              perfil.rol === 'cajero'
+                ? 'bg-amber-900/60 text-amber-300'
+                : perfil.rol === 'empleado'
+                  ? 'bg-slate-700 text-slate-400'
+                  : 'bg-blue-900/60 text-blue-300'
             }`}
           >
-            {perfil.rol === 'empleado' ? 'Empleado' : 'Administrador'}
+            {perfil.rol === 'cajero'
+              ? 'Cajero'
+              : perfil.rol === 'empleado'
+                ? 'Empleado'
+                : 'Administrador'}
           </span>
         </div>
         <form action={signOut}>

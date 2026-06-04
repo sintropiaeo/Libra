@@ -13,6 +13,7 @@ import type { Perfil, NegocioConfig, PermisosEmpleado } from '@/lib/permisos'
 import { PERMISOS_DEFAULT, TODOS_LOS_METODOS } from '@/lib/permisos'
 import {
   crearEmpleado,
+  actualizarRolEmpleado,
   actualizarPermisosEmpleado,
   toggleActivoEmpleado,
   guardarNegocio,
@@ -101,6 +102,20 @@ export default function ConfigCliente({ empleados: init, negocio: initNegocio, c
 // TAB: USUARIOS
 // ══════════════════════════════════════════════════════════════════════════
 
+// ─── Badge de rol ─────────────────────────────────────────────────────────
+
+function RolBadge({ rol }: { rol: string }) {
+  if (rol === 'admin') return (
+    <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 bg-blue-100 text-blue-700">Admin</span>
+  )
+  if (rol === 'cajero') return (
+    <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 bg-amber-100 text-amber-700">Cajero</span>
+  )
+  return (
+    <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 bg-slate-100 text-slate-600">Empleado</span>
+  )
+}
+
 function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; adminId: string; onRefresh: () => void }) {
   const [showCreate, setShowCreate]     = useState(false)
   const [expanded, setExpanded]         = useState<string | null>(null)
@@ -113,7 +128,7 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
   }
 
   async function handleToggleActivo(perfil: Perfil) {
-    if (perfil.id === adminId) return // no desactivar al propio admin
+    if (perfil.id === adminId) return
     startTransition(async () => {
       const res = await toggleActivoEmpleado(perfil.id, !perfil.activo)
       if (res.error) { setErrMsg(res.error); return }
@@ -121,17 +136,31 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
     })
   }
 
+  async function handleCambiarRol(perfil: Perfil, nuevoRol: 'admin' | 'cajero') {
+    startTransition(async () => {
+      const res = await actualizarRolEmpleado(perfil.id, nuevoRol)
+      if (res.error) { setErrMsg(res.error); return }
+      setOkMsg('Rol actualizado')
+      onRefresh()
+    })
+  }
+
+  const esPropio = (p: Perfil) => p.id === adminId
+  const esAdminRol = (p: Perfil) => p.rol === 'admin'
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">{empleados.length} usuario{empleados.length !== 1 ? 's' : ''} registrado{empleados.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-slate-500">
+          {empleados.length} usuario{empleados.length !== 1 ? 's' : ''} registrado{empleados.length !== 1 ? 's' : ''}
+        </p>
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <UserPlus className="w-4 h-4" />
-          Agregar empleado
+          Agregar usuario
         </button>
       </div>
 
@@ -148,13 +177,13 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
         </div>
       )}
 
-      {/* Lista de empleados */}
+      {/* Lista de usuarios */}
       <div className="space-y-2">
         {empleados.map(perfil => (
           <div key={perfil.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             {/* Fila principal */}
             <div className="flex items-center gap-3 px-4 py-3">
-              {/* Avatar inicial */}
+              {/* Avatar */}
               <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                 <span className="text-sm font-semibold text-slate-600">
                   {perfil.nombre.charAt(0).toUpperCase()}
@@ -164,7 +193,7 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">
                   {perfil.nombre}
-                  {perfil.id === adminId && (
+                  {esPropio(perfil) && (
                     <span className="ml-2 text-xs text-slate-400">(vos)</span>
                   )}
                 </p>
@@ -172,13 +201,7 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
               </div>
 
               {/* Badges */}
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-                perfil.rol === 'admin'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-slate-100 text-slate-600'
-              }`}>
-                {perfil.rol === 'admin' ? 'Admin' : 'Empleado'}
-              </span>
+              <RolBadge rol={perfil.rol} />
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
                 perfil.activo
                   ? 'bg-green-100 text-green-700'
@@ -187,8 +210,8 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
                 {perfil.activo ? 'Activo' : 'Inactivo'}
               </span>
 
-              {/* Acciones */}
-              {perfil.rol !== 'admin' && (
+              {/* Acciones — solo para usuarios que no son el propio admin */}
+              {!esPropio(perfil) && (
                 <>
                   <button
                     onClick={() => handleToggleActivo(perfil)}
@@ -205,6 +228,7 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
 
                   <button
                     onClick={() => toggleExpand(perfil.id)}
+                    title="Editar permisos"
                     className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors shrink-0"
                   >
                     {expanded === perfil.id
@@ -215,23 +239,57 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
               )}
             </div>
 
-            {/* Panel de permisos expandible */}
-            {expanded === perfil.id && perfil.rol !== 'admin' && (
-              <PermisosPanel
-                perfil={perfil}
-                onSave={() => { onRefresh(); setOkMsg('Permisos actualizados') }}
-                onError={setErrMsg}
-              />
+            {/* Panel de edición expandible */}
+            {expanded === perfil.id && !esPropio(perfil) && (
+              <div className="border-t border-slate-100 bg-slate-50 px-4 py-4 space-y-4">
+                {/* Selector de rol */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Rol</p>
+                  <div className="flex gap-2">
+                    {(['admin', 'cajero'] as const).map(r => (
+                      <button
+                        key={r}
+                        type="button"
+                        disabled={isPending || perfil.rol === r}
+                        onClick={() => handleCambiarRol(perfil, r)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                          perfil.rol === r
+                            ? r === 'admin'
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-amber-500 text-white border-amber-500'
+                            : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 disabled:opacity-50'
+                        }`}
+                      >
+                        {r === 'admin' ? 'Administrador' : 'Cajero'}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    {perfil.rol === 'cajero'
+                      ? 'Cajero: accede al POS, ve productos y comprobantes. Sin acceso a proveedores, compras ni configuración.'
+                      : 'Admin: acceso completo a todas las secciones.'}
+                  </p>
+                </div>
+
+                {/* Permisos granulares solo para empleados legacy */}
+                {perfil.rol === 'empleado' && (
+                  <PermisosPanel
+                    perfil={perfil}
+                    onSave={() => { onRefresh(); setOkMsg('Permisos actualizados') }}
+                    onError={setErrMsg}
+                  />
+                )}
+              </div>
             )}
           </div>
         ))}
       </div>
 
-      {/* Modal crear empleado */}
+      {/* Modal crear usuario */}
       {showCreate && (
         <ModalCrearEmpleado
           onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); setOkMsg('Empleado creado correctamente'); onRefresh() }}
+          onCreated={() => { setShowCreate(false); setOkMsg('Usuario creado correctamente'); onRefresh() }}
           onError={setErrMsg}
         />
       )}
@@ -368,7 +426,7 @@ function PermisoToggle({ label, descripcion, checked, onChange }: {
   )
 }
 
-// ─── Modal crear empleado ─────────────────────────────────────────────────
+// ─── Modal crear usuario ──────────────────────────────────────────────────
 
 function ModalCrearEmpleado({ onClose, onCreated, onError }: {
   onClose:   () => void
@@ -376,10 +434,12 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
   onError:   (msg: string) => void
 }) {
   const [isPending, startTransition] = useTransition()
+  const [rolSeleccionado, setRolSeleccionado] = useState<'cajero' | 'admin'>('cajero')
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
+    formData.set('rol', rolSeleccionado)
     startTransition(async () => {
       const res = await crearEmpleado(formData)
       if (res.error) { onError(res.error); return }
@@ -391,7 +451,7 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-semibold text-slate-800">Agregar empleado</h2>
+          <h2 className="text-lg font-semibold text-slate-800">Agregar usuario</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
             <X className="w-5 h-5" />
           </button>
@@ -399,24 +459,26 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
 
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Nombre completo</label>
             <input
               name="nombre"
               required
               placeholder="Ej: María García"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
             <input
               name="email"
               type="email"
               required
-              placeholder="empleado@gmail.com"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="usuario@gmail.com"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña temporal</label>
             <input
@@ -425,9 +487,62 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
               required
               minLength={6}
               placeholder="Mínimo 6 caracteres"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <p className="text-xs text-slate-400 mt-1">El empleado podrá cambiarla después de iniciar sesión.</p>
+            <p className="text-xs text-slate-400 mt-1">El usuario podrá cambiarla después de iniciar sesión.</p>
+          </div>
+
+          {/* Selector de rol */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Rol</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                {
+                  id:    'cajero' as const,
+                  label: 'Cajero',
+                  desc:  'POS, productos y comprobantes',
+                  color: 'amber',
+                },
+                {
+                  id:    'admin' as const,
+                  label: 'Administrador',
+                  desc:  'Acceso completo al sistema',
+                  color: 'blue',
+                },
+              ]).map(({ id, label, desc, color }) => {
+                const activo = rolSeleccionado === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setRolSeleccionado(id)}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition-colors ${
+                      activo
+                        ? color === 'amber'
+                          ? 'bg-amber-50 border-amber-400'
+                          : 'bg-blue-50 border-blue-400'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
+                        activo
+                          ? color === 'amber' ? 'border-amber-500' : 'border-blue-500'
+                          : 'border-slate-300'
+                      }`}>
+                        {activo && <div className={`w-1.5 h-1.5 rounded-full ${color === 'amber' ? 'bg-amber-500' : 'bg-blue-500'}`} />}
+                      </div>
+                      <span className={`text-sm font-semibold ${
+                        activo
+                          ? color === 'amber' ? 'text-amber-700' : 'text-blue-700'
+                          : 'text-slate-700'
+                      }`}>{label}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 pl-5">{desc}</p>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -443,7 +558,7 @@ function ModalCrearEmpleado({ onClose, onCreated, onError }: {
               disabled={isPending}
               className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {isPending ? 'Creando…' : 'Crear empleado'}
+              {isPending ? 'Creando…' : 'Crear usuario'}
             </button>
           </div>
         </form>
