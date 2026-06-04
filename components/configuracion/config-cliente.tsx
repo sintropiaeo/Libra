@@ -146,7 +146,6 @@ function TabUsuarios({ empleados, adminId, onRefresh }: { empleados: Perfil[]; a
   }
 
   const esPropio = (p: Perfil) => p.id === adminId
-  const esAdminRol = (p: Perfil) => p.rol === 'admin'
 
   return (
     <div className="space-y-4">
