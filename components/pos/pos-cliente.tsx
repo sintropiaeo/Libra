@@ -180,6 +180,7 @@ export default function PosCliente({
   const [buscando,           setBuscando]           = useState(false)
   const debounceSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchVersionRef  = useRef(0)
+  const lastAddedRef      = useRef<number>(0)   // cooldown: timestamp del último producto agregado
 
   const cajaAbierta = arqueoAbierto !== null
 
@@ -306,7 +307,11 @@ export default function PosCliente({
         },
       ]
     })
+    lastAddedRef.current = Date.now()
     setBusqueda('')
+    setResultadosBusqueda([])
+    setBuscando(false)
+    if (debounceSearchRef.current) clearTimeout(debounceSearchRef.current)
     setTimeout(() => searchRef.current?.focus(), 0)
     return true
   }
@@ -384,6 +389,10 @@ export default function PosCliente({
 
     if (e.key !== 'Enter' || !busqueda.trim()) return
     e.preventDefault()
+
+    // Cooldown: el Enter del scanner que terminó de agregar el producto anterior
+    // puede llegar al input si el foco se mueve justo en ese instante. Ignorarlo.
+    if (Date.now() - lastAddedRef.current < 300) return
 
     if (resultadosBusqueda.length > 0) {
       const wasScanner = isScannerRef.current
