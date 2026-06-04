@@ -18,32 +18,30 @@ function isTestMode(req: NextRequest): boolean {
   )
 }
 
-// ─── Table discovery via information_schema ───────────────────────────────────
-// PostgREST soporta schema switching con el header Accept-Profile.
-// El service role key bypasa RLS también en information_schema.
+// ─── Table discovery via PostgREST OpenAPI spec ───────────────────────────────
+// GET /rest/v1/ devuelve el spec OpenAPI con una entrada en `definitions`
+// por cada tabla/vista expuesta en el schema public. Es el endpoint más
+// confiable — no requiere acceso a information_schema ni funciones custom.
 
 async function getPublicTableNames(): Promise<string[]> {
   const url        = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-  const res = await fetch(
-    `${url}/rest/v1/tables?table_schema=eq.public&table_type=eq.BASE%20TABLE&select=table_name&order=table_name`,
-    {
-      headers: {
-        'Accept-Profile': 'information_schema',
-        'apikey':          serviceKey,
-        'Authorization':   `Bearer ${serviceKey}`,
-      },
+  const res = await fetch(`${url}/rest/v1/`, {
+    headers: {
+      'apikey':        serviceKey,
+      'Authorization': `Bearer ${serviceKey}`,
     },
-  )
+  })
 
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`information_schema no accesible: ${res.status} — ${body}`)
+    throw new Error(`Error al obtener spec de PostgREST: ${res.status} — ${body}`)
   }
 
-  const rows: { table_name: string }[] = await res.json()
-  return rows.map(r => r.table_name)
+  const spec = await res.json()
+  // spec.definitions tiene una entrada por cada tabla/vista del schema public
+  return Object.keys(spec.definitions ?? {}).sort()
 }
 
 // ─── HTML del email ───────────────────────────────────────────────────────────
