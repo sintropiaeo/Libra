@@ -134,10 +134,10 @@ async function ejecutarBackup() {
   let totalRegistros = 0
 
   for (const tableName of tableNames) {
-    // Paginar de a 10.000 para no saturar memoria
+    // Paginar de a 1.000 (límite max-rows de PostgREST en Supabase hosted)
     let allRows: unknown[] = []
     let from = 0
-    const PAGE = 10_000
+    const PAGE = 1_000
     let done = false
 
     while (!done) {
