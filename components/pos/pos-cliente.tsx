@@ -674,19 +674,15 @@ export default function PosCliente({
                 <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                 Favoritos
               </p>
-              <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+              <div className="grid gap-2 px-4 pb-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
                 {favoritosIniciales.map((p) => (
                   <button
                     key={p.id}
                     onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
                     title={p.nombre}
-                    className="shrink-0 w-[110px] h-[88px] relative rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/60 active:scale-95 flex flex-col justify-between p-2.5 transition-all text-left"
+                    className="h-12 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97] text-sm font-medium text-slate-800 text-center truncate transition-all"
                   >
-                    <Star className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                    <p className="font-semibold text-slate-800 text-xs leading-tight line-clamp-3 pr-4">
-                      {p.nombre}
-                    </p>
-                    <p className="text-sm font-bold text-blue-600">{ARS(p.precio_venta)}</p>
+                    {p.nombre}
                   </button>
                 ))}
               </div>
