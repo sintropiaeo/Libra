@@ -21,6 +21,24 @@ export async function signIn(
   redirect('/dashboard')
 }
 
+export async function signInDemo(): Promise<{ error: string | null }> {
+  const email    = process.env.DEMO_EMAIL
+  const password = process.env.DEMO_PASSWORD
+
+  if (!email || !password) {
+    return { error: 'Demo no disponible en este momento.' }
+  }
+
+  const supabase = createClient()
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+  if (error) {
+    return { error: 'No se pudo acceder a la demo. Intentá de nuevo.' }
+  }
+
+  redirect('/dashboard')
+}
+
 export async function signOut() {
   const supabase = createClient()
   await supabase.auth.signOut()

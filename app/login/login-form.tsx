@@ -2,9 +2,9 @@
 
 import { useFormState, useFormStatus } from 'react-dom'
 import Link from 'next/link'
-import { BookOpen, Eye, EyeOff } from 'lucide-react'
-import { signIn } from './actions'
-import { useState } from 'react'
+import { BookOpen, Eye, EyeOff, Zap } from 'lucide-react'
+import { signIn, signInDemo } from './actions'
+import { useState, useTransition } from 'react'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -26,8 +26,19 @@ export default function LoginForm({
   mostrarRegistro: boolean
   errorParam?: string
 }) {
-  const [state, formAction] = useFormState(signIn, { error: null })
-  const [verPass, setVerPass] = useState(false)
+  const [state, formAction]         = useFormState(signIn, { error: null })
+  const [verPass, setVerPass]       = useState(false)
+  const [demoError, setDemoError]   = useState<string | null>(null)
+  const [demoPending, startDemo]    = useTransition()
+
+  function handleDemo() {
+    setDemoError(null)
+    startDemo(async () => {
+      const result = await signInDemo()
+      if (result?.error) setDemoError(result.error)
+      // Si no hay error, signInDemo hace redirect internamente
+    })
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950">
@@ -109,9 +120,38 @@ export default function LoginForm({
             <SubmitButton />
           </form>
 
+          {/* Separador + Botón Demo */}
+          <div className="mt-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-1 h-px bg-slate-200" />
+              <span className="text-xs text-slate-400 font-medium">o</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+
+            {demoError && (
+              <div className="mb-3 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-lg">
+                {demoError}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleDemo}
+              disabled={demoPending}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border-2 border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 font-semibold text-sm transition-colors"
+            >
+              <Zap className="w-4 h-4" />
+              {demoPending ? 'Entrando...' : 'Probar demo gratis →'}
+            </button>
+
+            <p className="text-center text-xs text-slate-400 mt-2">
+              Los datos se resetean automáticamente cada semana
+            </p>
+          </div>
+
           {/* Link de registro — solo si no hay admin */}
           {mostrarRegistro && (
-            <div className="mt-6 pt-5 border-t border-slate-100 text-center">
+            <div className="mt-4 pt-5 border-t border-slate-100 text-center">
               <p className="text-sm text-slate-500">
                 ¿Primera vez?{' '}
                 <Link

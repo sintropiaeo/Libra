@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
 import BienvenidaModal from '@/components/bienvenida-modal'
+import DemoBanner from '@/components/demo-banner'
 import type { Perfil } from '@/lib/permisos'
 import { signOut } from '@/app/login/actions'
 
@@ -24,6 +25,12 @@ export default async function DashboardLayout({
     .single()
 
   const perfil = perfilData as Perfil | null
+
+  // Verificar si el negocio es demo (para mostrar el banner)
+  const { data: negocioData } = perfil?.negocio_id
+    ? await supabase.from('negocios').select('is_demo').eq('id', perfil.negocio_id).single()
+    : { data: null }
+  const isDemo = negocioData?.is_demo ?? false
 
   // Cuenta desactivada → mostrar mensaje (sin redirect loop)
   if (!perfil || !perfil.activo) {
@@ -54,8 +61,9 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      <DemoBanner isDemo={isDemo} />
       <Sidebar userEmail={user.email!} perfil={perfil} />
-      <div className="flex-1 ml-64 min-w-0">
+      <div className={`flex-1 ml-64 min-w-0 ${isDemo ? 'pt-9' : ''}`}>
         {children}
       </div>
       {(perfil.rol === 'admin' || perfil.rol === 'super_admin') && <BienvenidaModal perfilId={perfil.id} />}
