@@ -13,12 +13,13 @@ async function verificarAccesoProveedores() {
   if (!user) return null
   const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
   if (!tieneAcceso(data as Perfil | null, 'proveedores')) return null
-  return supabase
+  return { supabase, negocioId: (data as Perfil).negocio_id }
 }
 
 export async function crearProveedor(formData: FormData): Promise<ActionResult> {
-  const supabase = await verificarAccesoProveedores()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarAccesoProveedores()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
 
   const { error } = await supabase.from('proveedores').insert({
     nombre:    (formData.get('nombre') as string).trim(),
@@ -26,6 +27,7 @@ export async function crearProveedor(formData: FormData): Promise<ActionResult> 
     email:     (formData.get('email') as string)?.trim() || null,
     direccion: (formData.get('direccion') as string)?.trim() || null,
     notas:     (formData.get('notas') as string)?.trim() || null,
+    negocio_id: negocioId,
   })
 
   if (error) return { error: error.message }
@@ -37,8 +39,9 @@ export async function actualizarProveedor(
   id: string,
   formData: FormData
 ): Promise<ActionResult> {
-  const supabase = await verificarAccesoProveedores()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarAccesoProveedores()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase } = ctx
 
   const { error } = await supabase
     .from('proveedores')
@@ -60,8 +63,9 @@ export async function toggleActivoProveedor(
   id: string,
   activo: boolean
 ): Promise<ActionResult> {
-  const supabase = await verificarAccesoProveedores()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarAccesoProveedores()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase } = ctx
   const { error } = await supabase
     .from('proveedores')
     .update({ activo })

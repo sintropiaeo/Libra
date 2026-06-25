@@ -14,12 +14,13 @@ async function verificarEditorProductos() {
   const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
   const perfil = data as Perfil | null
   if (!puedeEditarProductos(perfil)) return null
-  return supabase
+  return { supabase, negocioId: perfil!.negocio_id }
 }
 
 export async function crearProducto(formData: FormData): Promise<ActionResult> {
-  const supabase = await verificarEditorProductos()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarEditorProductos()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
 
   const { error } = await supabase.from('productos').insert({
     nombre:                   (formData.get('nombre') as string).trim(),
@@ -33,6 +34,7 @@ export async function crearProducto(formData: FormData): Promise<ActionResult> {
     codigo_interno:           (formData.get('codigo_interno') as string)?.trim() || null,
     unidad:                   formData.get('unidad') as string,
     permitir_venta_sin_stock: formData.get('permitir_venta_sin_stock') === 'true',
+    negocio_id:               negocioId,
   })
 
   if (error) return { error: error.message }
@@ -44,8 +46,9 @@ export async function actualizarProducto(
   id: string,
   formData: FormData
 ): Promise<ActionResult> {
-  const supabase = await verificarEditorProductos()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarEditorProductos()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase } = ctx
 
   const { error } = await supabase
     .from('productos')
@@ -73,8 +76,9 @@ export async function toggleActivoProducto(
   id: string,
   activo: boolean
 ): Promise<ActionResult> {
-  const supabase = await verificarEditorProductos()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarEditorProductos()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase } = ctx
   const { error } = await supabase
     .from('productos')
     .update({ activo })
@@ -89,8 +93,9 @@ export async function toggleFavoritoProducto(
   id: string,
   esFavorito: boolean
 ): Promise<ActionResult> {
-  const supabase = await verificarEditorProductos()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarEditorProductos()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase } = ctx
   const { error } = await supabase
     .from('productos')
     .update({ es_favorito: esFavorito })
@@ -128,8 +133,9 @@ export async function importarLoteProductos(
   batch: ProductoImport[],
   onDuplicate: 'actualizar' | 'saltar'
 ): Promise<ImportLoteResult> {
-  const supabase = await verificarEditorProductos()
-  if (!supabase) return { insertados: 0, actualizados: 0, saltados: 0, error: 'Sin permisos.' }
+  const ctx = await verificarEditorProductos()
+  if (!ctx) return { insertados: 0, actualizados: 0, saltados: 0, error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
 
   // Resolver categorías únicas en este lote
   const setNombres = new Set(batch.map((p) => p.categoria_nombre).filter(Boolean) as string[])
@@ -192,6 +198,7 @@ export async function importarLoteProductos(
       unidad:                   p.unidad        || 'unidad',
       activo:                   true,
       permitir_venta_sin_stock: false,
+      negocio_id:               negocioId,
     }
 
     const existingId = p.codigo_barras ? existingMap[p.codigo_barras] : undefined

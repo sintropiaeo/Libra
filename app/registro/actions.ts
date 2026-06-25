@@ -43,14 +43,31 @@ export async function registrar(
     return { error: authError?.message ?? 'Error al crear el usuario.' }
   }
 
+  // Obtener o crear el negocio (tabla negocios es la fuente de verdad multi-tenant)
+  let negocioId: string
+  const { data: negocioRow } = await admin.from('negocios').select('id').limit(1).maybeSingle()
+  if (negocioRow) {
+    negocioId = negocioRow.id
+    await admin.from('negocios').update({ nombre: nombreNegocio }).eq('id', negocioId)
+  } else {
+    const { data: newNegocio, error: negocioError } = await admin
+      .from('negocios').insert({ nombre: nombreNegocio }).select('id').single()
+    if (negocioError || !newNegocio) {
+      await admin.auth.admin.deleteUser(authData.user.id)
+      return { error: 'Error al crear el negocio.' }
+    }
+    negocioId = newNegocio.id
+  }
+
   // Crear perfil admin
   const { error: perfilError } = await admin.from('perfiles').insert({
-    user_id:  authData.user.id,
+    user_id:    authData.user.id,
     nombre,
     email,
-    rol:      'admin',
-    permisos: {},
-    activo:   true,
+    rol:        'admin',
+    permisos:   {},
+    activo:     true,
+    negocio_id: negocioId,
   })
 
   if (perfilError) {
@@ -62,13 +79,14 @@ export async function registrar(
   const { data: negocioExisting } = await admin
     .from('negocio_config')
     .select('id')
+    .eq('negocio_id', negocioId)
     .limit(1)
     .maybeSingle()
 
   if (negocioExisting) {
     await admin.from('negocio_config').update({ nombre: nombreNegocio }).eq('id', negocioExisting.id)
   } else {
-    await admin.from('negocio_config').insert({ nombre: nombreNegocio })
+    await admin.from('negocio_config').insert({ nombre: nombreNegocio, negocio_id: negocioId })
   }
 
   // Iniciar sesión automáticamente

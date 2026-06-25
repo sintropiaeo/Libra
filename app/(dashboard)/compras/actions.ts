@@ -12,7 +12,7 @@ async function verificarRegistradorCompras() {
   const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
   const perfil = data as Perfil | null
   if (!puedeRegistrarCompras(perfil)) return null
-  return supabase
+  return { supabase, negocioId: perfil!.negocio_id }
 }
 
 type ItemCompra = {
@@ -31,8 +31,9 @@ export async function crearCompra(payload: {
   archivo_path?: string
   archivo_nombre?: string
 }): Promise<{ error?: string; compraId?: string }> {
-  const supabase = await verificarRegistradorCompras()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarRegistradorCompras()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
 
   if (!payload.items.length) {
     return { error: 'Agregá al menos un producto.' }
@@ -48,6 +49,7 @@ export async function crearCompra(payload: {
     proveedor_id: payload.proveedor_id || null,
     total,
     notas:        payload.notas?.trim() || null,
+    negocio_id:   negocioId,
   }
   // Solo incluir columnas de archivo si existen en el payload (requieren migración SQL)
   if (payload.archivo_path) {
@@ -72,6 +74,7 @@ export async function crearCompra(payload: {
       producto_id:     item.producto_id,
       cantidad:        item.cantidad,
       precio_unitario: item.precio_unitario,
+      negocio_id:      negocioId,
       // subtotal es GENERATED — no se incluye
     }))
   )
@@ -112,8 +115,9 @@ type ProductoRapido = {
 export async function crearProductoRapido(
   formData: FormData
 ): Promise<{ error?: string; producto?: ProductoRapido }> {
-  const supabase = await verificarRegistradorCompras()
-  if (!supabase) return { error: 'Sin permisos.' }
+  const ctx = await verificarRegistradorCompras()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
 
   const nombre     = (formData.get('nombre') as string)?.trim()
   const unidad     = (formData.get('unidad') as string) || 'unidad'
@@ -132,6 +136,7 @@ export async function crearProductoRapido(
       stock_actual: 0,
       stock_minimo,
       activo: true,
+      negocio_id: negocioId,
     })
     .select('id, nombre, precio_costo, stock_actual, unidad')
     .single()
