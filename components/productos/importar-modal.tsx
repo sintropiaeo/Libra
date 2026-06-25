@@ -178,6 +178,18 @@ export default function ImportarModal({ onClose, onSuccess }: {
 
     const supabase = createClient()
 
+    // Obtener negocio_id del usuario — necesario para el INSERT (RLS requiere negocio_id explícito)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: perfil } = await supabase
+      .from('perfiles').select('negocio_id').eq('user_id', user!.id).single()
+    const negocioId = perfil?.negocio_id as string | undefined
+
+    if (!negocioId) {
+      setErrorMsg('No se pudo obtener el negocio del usuario. Intentá recargar la página.')
+      setStep('preview')
+      return
+    }
+
     // Resolver todas las categorías de una sola vez
     const productos = filas.map(filaAProducto).filter((p) => p.nombre.trim())
     const total = productos.length
@@ -231,6 +243,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
         unidad:                   (['unidad','pack','resma','metro'].includes(p.unidad ?? '') ? p.unidad : 'unidad') as string,
         activo:                   true,
         permitir_venta_sin_stock: true,
+        negocio_id:               negocioId,
       })
 
       const conBarras = batch.filter((p) => p.codigo_barras?.trim())
