@@ -107,6 +107,17 @@ export async function toggleFavoritoProducto(
   return { success: true }
 }
 
+export async function eliminarProducto(id: string): Promise<ActionResult> {
+  const ctx = await verificarEditorProductos()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase } = ctx
+  const { error } = await supabase.from('productos').delete().eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return { success: true }
+}
+
 // ─── Importación masiva ───────────────────────────────────────────────────────
 
 export type ProductoImport = {

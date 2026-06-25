@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, AlertTriangle, X, Package, Upload,
-  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star,
+  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star, Trash2,
 } from 'lucide-react'
 import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -13,6 +13,7 @@ import {
   actualizarProducto,
   toggleActivoProducto,
   toggleFavoritoProducto,
+  eliminarProducto,
 } from '@/app/(dashboard)/productos/actions'
 import ImportarModal from '@/components/productos/importar-modal'
 
@@ -121,6 +122,10 @@ export default function ProductosCliente({
 
   // Modal importar
   const [modalImportar, setModalImportar] = useState(false)
+
+  // Confirmación de eliminación
+  const [confirmEliminar, setConfirmEliminar] = useState(false)
+  const [eliminando,      setEliminando]      = useState(false)
 
   // Búsqueda con debounce (no hace navigate en cada tecla)
   const debounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -246,6 +251,22 @@ export default function ProductosCliente({
 
     cerrarModal()
     setGuardando(false)
+    startTransition(() => router.refresh())
+  }
+
+  async function handleEliminar() {
+    if (!productoEditando) return
+    setEliminando(true)
+    const result = await eliminarProducto(productoEditando.id)
+    if (result?.error) {
+      setError(result.error)
+      setEliminando(false)
+      setConfirmEliminar(false)
+      return
+    }
+    setConfirmEliminar(false)
+    cerrarModal()
+    setEliminando(false)
     startTransition(() => router.refresh())
   }
 
@@ -736,21 +757,76 @@ export default function ProductosCliente({
                 )}
               </div>
 
-              <div className="flex gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
-                <button
-                  type="button" onClick={cerrarModal}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit" disabled={guardando}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg transition-colors"
-                >
-                  {guardando ? 'Guardando...' : productoEditando ? 'Guardar cambios' : 'Crear producto'}
-                </button>
+              <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
+                <div>
+                  {productoEditando && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmEliminar(true)}
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button" onClick={cerrarModal}
+                    className="px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit" disabled={guardando}
+                    className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg transition-colors"
+                  >
+                    {guardando ? 'Guardando...' : productoEditando ? 'Guardar cambios' : 'Crear producto'}
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal confirmación eliminar */}
+      {confirmEliminar && productoEditando && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">¿Eliminar producto?</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Se eliminará <span className="font-medium text-slate-800">{productoEditando.nombre}</span> de forma permanente. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            {error && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                {error}
+              </div>
+            )}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setConfirmEliminar(false)}
+                disabled={eliminando}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleEliminar}
+                disabled={eliminando}
+                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-60"
+              >
+                {eliminando ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
