@@ -16,6 +16,7 @@ import {
   eliminarProducto,
 } from '@/app/(dashboard)/productos/actions'
 import { redondearPrecio } from '@/lib/utils'
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import ImportarModal from '@/components/productos/importar-modal'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -130,8 +131,9 @@ export default function ProductosCliente({
 
   // Búsqueda con debounce (no hace navigate en cada tecla)
   const debounceRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastInputTimeRef = useRef(0)
-  const isScannerRef     = useRef(false)
+  const busquedaInputRef = useRef<HTMLInputElement>(null)
+  const kbScanBufRef     = useRef<string[]>([])
+  const kbScanTimesRef   = useRef<number[]>([])
   const [busquedaLocal, setBusquedaLocal] = useState(q)
 
   const navigate = useCallback((params: { q?: string; cat?: string; p?: number; sort?: SortField; dir?: SortDir }) => {
@@ -148,6 +150,13 @@ export default function ProductosCliente({
     if (newDir  !== 'asc')    sp.set('dir',  newDir)
     startTransition(() => router.push(`/productos?${sp.toString()}`))
   }, [q, cat, sort, dir, router])
+
+  // Scanner global: dispara cuando el input de búsqueda NO tiene foco
+  useBarcodeScanner((code) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setBusquedaLocal(code)
+    navigate({ q: code, p: 1 })
+  }, busquedaInputRef)
 
   function handleSort(field: SortField) {
     if (field === sort) {
@@ -171,12 +180,6 @@ export default function ProductosCliente({
   }
 
   function handleBusqueda(e: React.ChangeEvent<HTMLInputElement>) {
-    const now = Date.now()
-    const gap = now - lastInputTimeRef.current
-    lastInputTimeRef.current = now
-    if (gap > 200)                isScannerRef.current = false
-    else if (gap > 0 && gap < 50) isScannerRef.current = true
-
     const value = e.target.value
     setBusquedaLocal(value)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -184,11 +187,42 @@ export default function ProductosCliente({
   }
 
   function handleKeyDownBusqueda(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && isScannerRef.current && busquedaLocal.trim()) {
-      e.preventDefault()
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      isScannerRef.current = false
-      navigate({ q: busquedaLocal.trim(), p: 1 })
+    if (e.key === 'Enter') {
+      const code  = kbScanBufRef.current.join('')
+      const times = kbScanTimesRef.current
+      kbScanBufRef.current  = []
+      kbScanTimesRef.current = []
+
+      if (code.length >= 4 && times.length >= 2) {
+        const span = times[times.length - 1] - times[0]
+        if (span < 100) {
+          // Es un scanner: reemplazar el input con el código limpio y buscar
+          e.preventDefault()
+          if (debounceRef.current) clearTimeout(debounceRef.current)
+          setBusquedaLocal(code)
+          navigate({ q: code, p: 1 })
+          return
+        }
+      }
+      // Enter normal del teclado: buscar inmediatamente lo que hay en el input
+      if (busquedaLocal.trim()) {
+        e.preventDefault()
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        navigate({ q: busquedaLocal.trim(), p: 1 })
+      }
+      return
+    }
+
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const now = Date.now()
+      const times = kbScanTimesRef.current
+      // Si hay un gap largo desde el último char, es una nueva sesión → limpiar buffer
+      if (times.length > 0 && now - times[times.length - 1] > 200) {
+        kbScanBufRef.current  = []
+        kbScanTimesRef.current = []
+      }
+      kbScanBufRef.current.push(e.key)
+      kbScanTimesRef.current.push(now)
     }
   }
 
@@ -347,6 +381,7 @@ export default function ProductosCliente({
         <div className="relative flex-1 min-w-56">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
           <input
+            ref={busquedaInputRef}
             id="busqueda-productos"
             name="busqueda-productos"
             type="search"

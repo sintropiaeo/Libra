@@ -15,6 +15,7 @@ import type { ConfiguracionTicket } from '@/lib/permisos'
 import { generarHTMLTicket } from '@/lib/ticket'
 import type { DatosCliente, PrintData } from '@/lib/ticket'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -63,59 +64,6 @@ const ARS = (v: number) =>
     currency: 'ARS',
     maximumFractionDigits: 0,
   }).format(v)
-
-// ─── Hook: scanner global de código de barras ─────────────────────────────────
-// Escucha keydown en document, independientemente del foco.
-// Si llegan ≥4 caracteres en <100 ms seguidos de Enter → es un scanner.
-// Se ignora cuando el search input ya tiene foco (lo maneja él solo).
-
-function useBarcodeScanner(
-  onBarcode: (code: string) => void,
-  excludeRef: React.RefObject<HTMLInputElement>,
-) {
-  const cbRef = useRef(onBarcode)
-  cbRef.current = onBarcode
-
-  const bufferRef = useRef<string[]>([])
-  const timesRef  = useRef<number[]>([])
-  const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Si el input de búsqueda tiene foco, ya maneja el scanner por su cuenta
-      if (excludeRef.current && document.activeElement === excludeRef.current) return
-      if (e.ctrlKey || e.altKey || e.metaKey) return
-
-      if (e.key === 'Enter') {
-        if (timerRef.current) clearTimeout(timerRef.current)
-        const code  = bufferRef.current.join('')
-        const times = timesRef.current
-        bufferRef.current = []
-        timesRef.current  = []
-        if (code.length >= 4 && times.length >= 2) {
-          const span = times[times.length - 1] - times[0]
-          if (span < 100) {
-            console.log(`[BarcodeScanner] código: "${code}" · ${times.length} chars en ${span}ms`)
-            cbRef.current(code)
-          }
-        }
-        return
-      }
-
-      if (e.key.length !== 1) return
-      bufferRef.current.push(e.key)
-      timesRef.current.push(Date.now())
-      if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => {
-        bufferRef.current = []
-        timesRef.current  = []
-      }, 150)
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [excludeRef])
-}
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
