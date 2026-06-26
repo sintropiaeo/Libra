@@ -761,7 +761,7 @@ export default function PosCliente({
                   </div>
                 ) : (
                   <ul className="divide-y divide-slate-100 px-4 py-1">
-                    {cart.map((item) => (
+                    {[...cart].reverse().map((item) => (
                       <li key={item.producto_id} className="py-3 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-800 text-sm truncate">{item.nombre}</p>
