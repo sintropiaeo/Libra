@@ -38,7 +38,7 @@ const ARS = (v: number) =>
 
 // ─── BarcodeLabel: renderiza un SVG con JsBarcode ─────────────────────────────
 
-function BarcodeLabel({ item, negocioNombre }: { item: ItemEtiqueta; negocioNombre?: string }) {
+function BarcodeLabel({ item }: { item: ItemEtiqueta }) {
   const svgRef = useRef<SVGSVGElement>(null)
 
   useEffect(() => {
@@ -122,7 +122,7 @@ export default function EtiquetasCliente() {
   function toggleSeleccion(id: string) {
     setSeleccionados(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
       return next
     })
   }
