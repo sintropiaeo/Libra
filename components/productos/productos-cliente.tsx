@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useTransition, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   Plus, Search, AlertTriangle, X, Package, Upload,
-  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star, Trash2,
+  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star, Trash2, Tag,
 } from 'lucide-react'
 import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -355,6 +356,15 @@ export default function ProductosCliente({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {puedeEditar && (
+            <Link
+              href="/productos/etiquetas"
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors border border-slate-200"
+            >
+              <Tag className="w-4 h-4" />
+              Imprimir etiquetas
+            </Link>
+          )}
           {puedeEditar && (
             <button
               onClick={() => setModalImportar(true)}
