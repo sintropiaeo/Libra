@@ -7,6 +7,7 @@ import {
   CheckCircle, AlertTriangle, Loader2, Download,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { redondearPrecio } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -235,7 +236,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
         descripcion:              p.descripcion?.trim() || null,
         categoria_id:             (p.categoria_nombre && categoriaMap[p.categoria_nombre]) || null,
         precio_costo:             p.precio_costo  ?? 0,
-        precio_venta:             p.precio_venta  ?? 0,
+        precio_venta:             redondearPrecio(p.precio_venta ?? 0),
         stock_actual:             p.stock_actual  ?? 0,
         stock_minimo:             p.stock_minimo  ?? 5,
         codigo_barras:            p.codigo_barras?.trim()  || null,
@@ -251,9 +252,28 @@ export default function ImportarModal({ onClose, onSuccess }: {
 
       // Upsert de los que tienen código de barras
       if (conBarras.length > 0) {
+        // Regla "precio nunca baja": pre-fetch precios existentes para comparar
+        const precioExistenteMap: Record<string, number> = {}
+        if (onDuplicate === 'actualizar') {
+          const barcodesEnBatch = conBarras.map((p) => p.codigo_barras!.trim())
+          const { data: existentes } = await supabase
+            .from('productos')
+            .select('codigo_barras, precio_venta')
+            .in('codigo_barras', barcodesEnBatch)
+          for (const e of existentes ?? []) {
+            if (e.codigo_barras) precioExistenteMap[e.codigo_barras] = Number(e.precio_venta)
+          }
+        }
+
+        const rowsConBarras = conBarras.map((p) => {
+          const row = toRow(p) // precio_venta ya está redondeado
+          const precioExistente = precioExistenteMap[p.codigo_barras?.trim() ?? ''] ?? 0
+          return { ...row, precio_venta: Math.max(row.precio_venta, precioExistente) }
+        })
+
         const { error } = await supabase
           .from('productos')
-          .upsert(conBarras.map(toRow), {
+          .upsert(rowsConBarras, {
             onConflict:       'codigo_barras',
             ignoreDuplicates: onDuplicate === 'saltar',
           })
@@ -265,7 +285,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
         }
       }
 
-      // Insert de los que NO tienen código de barras
+      // Insert de los que NO tienen código de barras (solo redondeo, no hay precio existente)
       if (sinBarras.length > 0) {
         const { error } = await supabase.from('productos').insert(sinBarras.map(toRow))
         if (error) {
