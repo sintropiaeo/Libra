@@ -239,21 +239,14 @@ export default function PosCliente({
     }
     setCart((prev) => {
       const existing = prev.find((i) => i.producto_id === p.id)
-      if (existing) {
-        return prev.map((i) =>
-          i.producto_id === p.id ? { ...i, cantidad: i.cantidad + cantidad } : i
-        )
+      const newItem = {
+        producto_id:     p.id,
+        nombre:          p.nombre,
+        precio_unitario: p.precio_venta,
+        unidad:          p.unidad,
+        cantidad:        existing ? existing.cantidad + cantidad : cantidad,
       }
-      return [
-        ...prev,
-        {
-          producto_id:     p.id,
-          nombre:          p.nombre,
-          precio_unitario: p.precio_venta,
-          unidad:          p.unidad,
-          cantidad,
-        },
-      ]
+      return [newItem, ...prev.filter((i) => i.producto_id !== p.id)]
     })
     lastAddedRef.current = Date.now()
     setBusqueda('')
@@ -761,7 +754,7 @@ export default function PosCliente({
                   </div>
                 ) : (
                   <ul className="divide-y divide-slate-100 px-4 py-1">
-                    {[...cart].reverse().map((item) => (
+                    {cart.map((item) => (
                       <li key={item.producto_id} className="py-3 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-800 text-sm truncate">{item.nombre}</p>
