@@ -240,12 +240,7 @@ export default function ProductosCliente({
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, String(v)))
 
-    // Regla A: redondear a la centena superior
-    // Regla B: precio nunca baja (solo al editar — productoEditando ya tiene el precio actual)
-    const precioRedondeado = redondearPrecio(Number(form.precio_venta))
-    const precioFinal = productoEditando
-      ? Math.max(precioRedondeado, productoEditando.precio_venta)
-      : precioRedondeado
+    const precioFinal = redondearPrecio(Number(form.precio_venta))
     fd.set('precio_venta', String(precioFinal))
 
     const result = productoEditando
