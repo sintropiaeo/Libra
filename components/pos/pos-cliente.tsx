@@ -621,9 +621,10 @@ export default function PosCliente({
                     key={p.id}
                     onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
                     title={p.nombre}
-                    className="h-12 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97] text-sm font-medium text-slate-800 text-center truncate transition-all"
+                    className="min-h-[56px] px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97] text-center transition-all flex flex-col items-center justify-center gap-0.5"
                   >
-                    {p.nombre}
+                    <span className="text-sm font-medium text-slate-800 leading-tight line-clamp-2">{p.nombre}</span>
+                    <span className="text-xs font-semibold text-slate-500">${p.precio_venta.toLocaleString('es-AR')}</span>
                   </button>
                 ))}
               </div>
