@@ -56,7 +56,7 @@ export function generarHTMLTicket(data: PrintData, options: PrintOptions): strin
   const itemsHTML = data.items
     .map(i => {
       const sub = i.precio_unitario * i.cantidad
-      return `<div class="row"><span>${i.cantidad}× ${i.nombre}</span><span>$${sub.toLocaleString('es-AR')}</span></div>`
+      return `<div class="item"><div class="item-n">${i.nombre}</div><div class="row item-d"><span>${i.cantidad}× $${i.precio_unitario.toLocaleString('es-AR')}/${i.unidad}</span><span>$${sub.toLocaleString('es-AR')}</span></div></div>`
     })
     .join('')
 
@@ -105,15 +105,17 @@ export function generarHTMLTicket(data: PrintData, options: PrintOptions): strin
   const ticketBody = `
 ${cabecera}
 <hr class="sep">
-<div>${fecha}</div>${numStr ? `<div>Venta <b>${numStr}</b></div>` : ''}
+<div class="fecha">${fecha}</div>${numStr ? `<div class="fecha">Venta <b>${numStr}</b></div>` : ''}
 ${compLabel}
 ${datosClienteHTML}
 <hr class="sep">
+<div class="row col-header"><span>Producto</span><span>Precio</span></div>
+<hr class="sep-d">
 ${itemsHTML}
 <hr class="sep">
-<div class="row b"><span>TOTAL</span><span>$${data.total.toLocaleString('es-AR')}</span></div>
-<hr class="sep">
-<div>Método: ${metodoLabel[data.metodoPago] ?? data.metodoPago}</div>
+<div class="row total-row"><span>TOTAL</span><span>$${data.total.toLocaleString('es-AR')}</span></div>
+<hr class="sep-d">
+<div class="fecha">Método: ${metodoLabel[data.metodoPago] ?? data.metodoPago}</div>
 ${pie}`
 
   const copiasHTML = Array.from({ length: copias })
@@ -122,12 +124,21 @@ ${pie}`
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Courier New',monospace;font-size:11px;width:${width};padding:6px}
-.c{text-align:center}.b{font-weight:bold}.big{font-size:14px}
-.sep{border:none;border-top:1px dashed #555;margin:4px 0}
-.row{display:flex;justify-content:space-between;gap:4px;padding:1px 0}
+body{font-family:'Courier New',monospace;font-size:12px;width:${width};padding:6px}
+.c{text-align:center}
+.b{font-weight:bold}
+.big{font-size:18px;font-weight:800}
+.fecha{font-size:12px;font-weight:500}
+.col-header{font-size:13px;font-weight:700}
+.sep{border:none;border-top:1.5px solid #000;margin:5px 0}
+.sep-d{border:none;border-top:1px dashed #666;margin:4px 0}
+.row{display:flex;justify-content:space-between;gap:4px}
 .row span:first-child{flex:1}
+.item{margin-bottom:7px}
+.item-n{font-size:14px;font-weight:700}
+.item-d{font-size:13px;font-weight:600}
+.total-row{font-size:18px;font-weight:800}
 .copia{page-break-after:always}.copia:last-child{page-break-after:auto}
-@media print{@page{margin:0;size:${ancho} auto}}
+@media print{@page{size:${ancho} auto;margin:4mm}}
 </style></head><body>${copiasHTML}</body></html>`
 }
