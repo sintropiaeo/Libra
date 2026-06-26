@@ -185,18 +185,49 @@ export default function EtiquetasCliente() {
     Array.from({ length: i.cantidad }, (_, idx) => ({ ...i, key: `${i.producto.id}-${idx}` }))
   )
 
-  // ─── CSS de impresión ───────────────────────────────────────────────────────
+  // ─── Imprimir via iframe (mismo patrón que ticket) ──────────────────────────
 
-  const printCSS = `
-    @media print {
-      body > *:not(#print-root) { display: none !important; }
-      #print-root { display: block !important; }
-      @page { size: A4; margin: 10mm; }
-      .no-print { display: none !important; }
-      .etiqueta { border: 1px dashed #999 !important; break-inside: avoid; page-break-inside: avoid; }
-      #grilla-etiquetas { display: flex; flex-wrap: wrap; gap: 4mm; }
-    }
-  `
+  async function handlePrint() {
+    const { default: JsBarcode } = await import('jsbarcode')
+
+    const labelsHTML = etiquetasExpandidas.map(item => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      try {
+        JsBarcode(svg, item.codigoEfectivo, {
+          format: 'CODE128', displayValue: true,
+          fontSize: 9, textMargin: 2, height: 38, margin: 4, width: 1.4,
+        })
+      } catch { /* código inválido — etiqueta sin barras */ }
+      return `<div class="label">
+        ${svg.outerHTML}
+        <p class="nombre">${item.producto.nombre}</p>
+        <p class="precio">$${item.producto.precio_venta.toLocaleString('es-AR')}</p>
+      </div>`
+    }).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Etiquetas</title><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif}
+.grid{display:flex;flex-wrap:wrap;gap:3mm}
+.label{width:50mm;min-height:30mm;border:1px dashed #999;padding:2mm;break-inside:avoid;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:space-between}
+.label svg{width:100%}
+.nombre{font-size:7.5pt;font-weight:600;text-align:center;margin-top:1mm;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.precio{font-size:9pt;font-weight:700;text-align:center;margin-top:1mm}
+@media print{@page{size:A4;margin:10mm}}
+</style></head><body><div class="grid">${labelsHTML}</div></body></html>`
+
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;visibility:hidden;width:0;height:0;border:0'
+    document.body.appendChild(iframe)
+    iframe.contentDocument!.open()
+    iframe.contentDocument!.write(html)
+    iframe.contentDocument!.close()
+    iframe.contentWindow!.focus()
+    setTimeout(() => {
+      iframe.contentWindow!.print()
+      setTimeout(() => document.body.removeChild(iframe), 2000)
+    }, 300)
+  }
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -204,22 +235,8 @@ export default function EtiquetasCliente() {
 
   return (
     <>
-      <style>{printCSS}</style>
-
-      {/* Zona imprimible */}
-      <div id="print-root" className="hidden">
-        <div
-          id="grilla-etiquetas"
-          style={{ display: 'flex', flexWrap: 'wrap', gap: '4mm', padding: '0' }}
-        >
-          {etiquetasExpandidas.map(item => (
-            <BarcodeLabel key={item.key} item={item} />
-          ))}
-        </div>
-      </div>
-
       {/* UI principal */}
-      <div className="p-8 max-w-4xl mx-auto no-print">
+      <div className="p-8 max-w-4xl mx-auto">
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
@@ -382,7 +399,7 @@ export default function EtiquetasCliente() {
                 3. Vista previa — {etiquetasExpandidas.length} etiqueta{etiquetasExpandidas.length !== 1 ? 's' : ''}
               </h2>
               <button
-                onClick={() => window.print()}
+                onClick={handlePrint}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
                 <Printer className="w-4 h-4" />
@@ -397,7 +414,7 @@ export default function EtiquetasCliente() {
             </div>
 
             <p className="text-xs text-slate-400 text-center">
-              Al imprimir, se ocultará todo excepto las etiquetas · Layout A4 · 4 columnas
+              Se abrirá el diálogo de impresión con las etiquetas listas · Layout A4
             </p>
           </div>
         )}
