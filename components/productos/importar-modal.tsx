@@ -274,7 +274,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
         const { error } = await supabase
           .from('productos')
           .upsert(rowsConBarras, {
-            onConflict:       'codigo_barras',
+            onConflict:       'negocio_id,codigo_barras',
             ignoreDuplicates: onDuplicate === 'saltar',
           })
         if (error) {
