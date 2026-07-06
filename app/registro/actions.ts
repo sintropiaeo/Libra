@@ -22,16 +22,6 @@ export async function registrar(
 
   const admin = createAdminClient()
 
-  // Doble check: que no haya admin aún (super_admin no cuenta)
-  const { count } = await admin
-    .from('perfiles')
-    .select('*', { count: 'exact', head: true })
-    .eq('rol', 'admin')
-
-  if ((count ?? 0) > 0) {
-    return { error: 'Ya existe un administrador registrado. Pedile que te cree una cuenta.' }
-  }
-
   // Crear usuario en auth (auto-confirmado, sin necesitar verificar email)
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email,
@@ -43,23 +33,17 @@ export async function registrar(
     return { error: authError?.message ?? 'Error al crear el usuario.' }
   }
 
-  // Obtener o crear el negocio (tabla negocios es la fuente de verdad multi-tenant)
-  let negocioId: string
-  const { data: negocioRow } = await admin.from('negocios').select('id').limit(1).maybeSingle()
-  if (negocioRow) {
-    negocioId = negocioRow.id
-    await admin.from('negocios').update({ nombre: nombreNegocio }).eq('id', negocioId)
-  } else {
-    const { data: newNegocio, error: negocioError } = await admin
-      .from('negocios').insert({ nombre: nombreNegocio }).select('id').single()
-    if (negocioError || !newNegocio) {
-      await admin.auth.admin.deleteUser(authData.user.id)
-      return { error: 'Error al crear el negocio.' }
-    }
-    negocioId = newNegocio.id
-  }
+  // Multi-tenant: cada registro crea SIEMPRE un negocio nuevo con su propio UUID
+  const { data: nuevoNegocio, error: negocioError } = await admin
+    .from('negocios').insert({ nombre: nombreNegocio }).select('id').single()
 
-  // Crear perfil admin
+  if (negocioError || !nuevoNegocio) {
+    await admin.auth.admin.deleteUser(authData.user.id)
+    return { error: 'Error al crear el negocio.' }
+  }
+  const negocioId = nuevoNegocio.id
+
+  // Crear perfil admin vinculado al negocio recién creado
   const { error: perfilError } = await admin.from('perfiles').insert({
     user_id:    authData.user.id,
     nombre,
@@ -71,23 +55,14 @@ export async function registrar(
   })
 
   if (perfilError) {
+    // Limpieza: borrar el negocio huérfano y el usuario de auth
+    await admin.from('negocios').delete().eq('id', negocioId)
     await admin.auth.admin.deleteUser(authData.user.id)
     return { error: perfilError.message }
   }
 
-  // Crear negocio_config
-  const { data: negocioExisting } = await admin
-    .from('negocio_config')
-    .select('id')
-    .eq('negocio_id', negocioId)
-    .limit(1)
-    .maybeSingle()
-
-  if (negocioExisting) {
-    await admin.from('negocio_config').update({ nombre: nombreNegocio }).eq('id', negocioExisting.id)
-  } else {
-    await admin.from('negocio_config').insert({ nombre: nombreNegocio, negocio_id: negocioId })
-  }
+  // Crear negocio_config del negocio nuevo (no bloqueante)
+  await admin.from('negocio_config').insert({ nombre: nombreNegocio, negocio_id: negocioId })
 
   // Iniciar sesión automáticamente
   const supabase = createClient()
