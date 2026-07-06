@@ -83,8 +83,38 @@ export async function crearVenta(payload: {
     return { error: 'Debe abrir la caja antes de registrar una venta.' }
   }
 
-  // Calcular total en el servidor (no confiar en el cliente)
-  const total = payload.items.reduce(
+  // Resolver el precio real desde el catálogo del negocio del usuario.
+  // Nunca confiar en el precio_unitario que manda el cliente (evita fraude de caja).
+  const negocioId = (perfilData as Perfil).negocio_id
+  const productoIds = Array.from(new Set(payload.items.map((item) => item.producto_id)))
+
+  const { data: productosDB, error: prodError } = await supabase
+    .from('productos')
+    .select('id, precio_venta')
+    .eq('negocio_id', negocioId)
+    .in('id', productoIds)
+
+  if (prodError) return { error: prodError.message }
+
+  const precioMap = new Map<string, number>()
+  for (const p of productosDB ?? []) precioMap.set(p.id, Number(p.precio_venta))
+
+  // Rechazar si algún producto no existe para este negocio
+  for (const item of payload.items) {
+    if (!precioMap.has(item.producto_id)) {
+      return { error: 'Uno de los productos no existe o no pertenece a este negocio.' }
+    }
+  }
+
+  // Ítems con el precio real del catálogo (no el del cliente)
+  const itemsConPrecio = payload.items.map((item) => ({
+    producto_id:     item.producto_id,
+    cantidad:        item.cantidad,
+    precio_unitario: precioMap.get(item.producto_id)!,
+  }))
+
+  // Calcular total en el servidor con los precios reales
+  const total = itemsConPrecio.reduce(
     (sum, item) => sum + item.precio_unitario * item.cantidad,
     0
   )
@@ -123,7 +153,7 @@ export async function crearVenta(payload: {
 
   // 2. Crear los ítems (los triggers de DB actualizan el stock automáticamente)
   const { error: itemsError } = await supabase.from('venta_items').insert(
-    payload.items.map((item) => ({
+    itemsConPrecio.map((item) => ({
       venta_id:        venta.id,
       producto_id:     item.producto_id,
       cantidad:        item.cantidad,
