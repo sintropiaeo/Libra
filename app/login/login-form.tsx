@@ -145,7 +145,7 @@ export default function LoginForm({
             </button>
 
             <p className="text-center text-xs text-slate-400 mt-2">
-              Los datos se resetean automáticamente cada semana
+              Los datos se resetean automáticamente todos los días
             </p>
           </div>
 

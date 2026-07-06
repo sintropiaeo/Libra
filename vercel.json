@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/demo/reset",
-      "schedule": "0 8 * * 0"
+      "schedule": "0 8 * * *"
     }
   ]
 }
