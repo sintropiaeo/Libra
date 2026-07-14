@@ -6,9 +6,9 @@ import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingCart, Banknote, Smartphone,
   CreditCard, Clock, Package, Printer, Calculator,
-  ChevronDown, ChevronRight, Star, FileText,
+  ChevronDown, ChevronRight, Star, FileText, Pencil,
 } from 'lucide-react'
-import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX } from '@/app/(dashboard)/ventas/nueva/actions'
+import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX, actualizarPrecioProducto } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import { obtenerVentaDetalle } from '@/app/(dashboard)/comprobantes/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
@@ -16,6 +16,7 @@ import { generarHTMLTicket } from '@/lib/ticket'
 import type { DatosCliente, PrintData } from '@/lib/ticket'
 import ArqueoTab, { type ArqueoCaja, type VentaTurno } from './arqueo-tab'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
+import { redondearPrecio } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ type CartItem = {
   producto_id: string
   nombre: string
   precio_unitario: number
+  precioOriginal: number          // precio del catálogo al agregar (para detectar edición admin)
+  actualizarProducto: boolean     // checkbox: persistir el precio editado al producto
   unidad: string
   cantidad: number
 }
@@ -70,6 +73,7 @@ const ARS = (v: number) =>
 export default function PosCliente({
   servicios,
   metodosActivos     = ['efectivo', 'transferencia', 'debito', 'credito'],
+  esAdmin            = false,
   arqueoAbierto      = null,
   ventasTurnoInicial = [],
   historialArqueos   = [],
@@ -83,6 +87,7 @@ export default function PosCliente({
 }: {
   servicios:            Producto[]
   metodosActivos?:      string[]
+  esAdmin?:             boolean
   arqueoAbierto?:       ArqueoCaja | null
   ventasTurnoInicial?:  VentaTurno[]
   historialArqueos?:    ArqueoCaja[]
@@ -112,6 +117,8 @@ export default function PosCliente({
     ventaId: string; total: number; metodoPago: string; printData: PrintData
   } | null>(null)
   const [cantServicio,   setCantServicio]   = useState<Record<string, number>>({})
+  // Edición de precio en el carrito (solo admin)
+  const [editandoPrecioId, setEditandoPrecioId] = useState<string | null>(null)
   // Ventas del turno: arranca con las del servidor, se actualiza en tiempo real con cada cobro
   const [ventasTurno,    setVentasTurno]    = useState<VentaTurno[]>(ventasTurnoInicial)
   // Ventas de hoy: para mostrar en el panel izquierdo
@@ -240,11 +247,13 @@ export default function PosCliente({
     setCart((prev) => {
       const existing = prev.find((i) => i.producto_id === p.id)
       const newItem = {
-        producto_id:     p.id,
-        nombre:          p.nombre,
-        precio_unitario: p.precio_venta,
-        unidad:          p.unidad,
-        cantidad:        existing ? existing.cantidad + cantidad : cantidad,
+        producto_id:        p.id,
+        nombre:             p.nombre,
+        precio_unitario:    p.precio_venta,
+        precioOriginal:     p.precio_venta,
+        actualizarProducto: false,
+        unidad:             p.unidad,
+        cantidad:           existing ? existing.cantidad + cantidad : cantidad,
       }
       return [newItem, ...prev.filter((i) => i.producto_id !== p.id)]
     })
@@ -286,6 +295,30 @@ export default function PosCliente({
   function vaciarCarrito() {
     setCart([])
     setError(null)
+  }
+
+  // ─── Edición de precio (solo admin) ─────────────────────────────────────────
+
+  function editarPrecio(id: string, valor: number) {
+    if (!esAdmin) return
+    setCart((prev) => prev.map((i) =>
+      i.producto_id === id
+        ? { ...i, precio_unitario: Number.isFinite(valor) && valor >= 0 ? valor : i.precio_unitario }
+        : i
+    ))
+  }
+
+  function confirmarPrecio(id: string) {
+    setCart((prev) => prev.map((i) =>
+      i.producto_id === id ? { ...i, precio_unitario: redondearPrecio(i.precio_unitario) } : i
+    ))
+    setEditandoPrecioId(null)
+  }
+
+  function toggleActualizarProducto(id: string) {
+    setCart((prev) => prev.map((i) =>
+      i.producto_id === id ? { ...i, actualizarProducto: !i.actualizarProducto } : i
+    ))
   }
 
   const total         = cart.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0)
@@ -413,6 +446,14 @@ export default function PosCliente({
       setError(result.error)
       setProcesando(false)
       return
+    }
+
+    // Admin: persistir al producto los precios editados que marcó con el checkbox
+    if (esAdmin) {
+      const aActualizar = cart.filter((i) => i.actualizarProducto && i.precio_unitario !== i.precioOriginal)
+      for (const i of aActualizar) {
+        await actualizarPrecioProducto(i.producto_id, i.precio_unitario)
+      }
     }
 
     setVentasTurno((prev) => [...prev, { total, metodo_pago: metodoPago }])
@@ -761,9 +802,42 @@ export default function PosCliente({
                       <li key={item.producto_id} className="py-3 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-800 text-sm truncate">{item.nombre}</p>
-                          <p className="text-xs text-slate-600 mt-0.5">
-                            {ARS(item.precio_unitario)} / {item.unidad}
-                          </p>
+                          {esAdmin ? (
+                            editandoPrecioId === item.producto_id ? (
+                              <input
+                                type="number" min={0} step="1" autoFocus
+                                defaultValue={item.precio_unitario}
+                                onChange={(e) => editarPrecio(item.producto_id, parseFloat(e.target.value))}
+                                onBlur={() => confirmarPrecio(item.producto_id)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') confirmarPrecio(item.producto_id) }}
+                                className="w-24 text-xs border border-blue-300 rounded px-1.5 py-0.5 mt-0.5 text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => setEditandoPrecioId(item.producto_id)}
+                                title="Editar precio"
+                                className="text-xs text-slate-600 mt-0.5 hover:text-blue-600 inline-flex items-center gap-1 transition-colors"
+                              >
+                                {ARS(item.precio_unitario)} / {item.unidad}
+                                <Pencil className="w-3 h-3 opacity-60" />
+                              </button>
+                            )
+                          ) : (
+                            <p className="text-xs text-slate-600 mt-0.5">
+                              {ARS(item.precio_unitario)} / {item.unidad}
+                            </p>
+                          )}
+                          {esAdmin && item.precio_unitario !== item.precioOriginal && (
+                            <label className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={item.actualizarProducto}
+                                onChange={() => toggleActualizarProducto(item.producto_id)}
+                                className="w-3 h-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              Actualizar precio del producto para futuras ventas
+                            </label>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button

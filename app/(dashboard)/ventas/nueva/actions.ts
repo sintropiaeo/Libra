@@ -2,8 +2,9 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { tieneAcceso } from '@/lib/permisos'
+import { tieneAcceso, esAdmin } from '@/lib/permisos'
 import type { Perfil } from '@/lib/permisos'
+import { redondearPrecio } from '@/lib/utils'
 import type { TipoComprobante, DatosCliente } from '@/lib/ticket'
 
 export type ProductoPOS = {
@@ -106,12 +107,17 @@ export async function crearVenta(payload: {
     }
   }
 
-  // Ítems con el precio real del catálogo (no el del cliente)
-  const itemsConPrecio = payload.items.map((item) => ({
-    producto_id:     item.producto_id,
-    cantidad:        item.cantidad,
-    precio_unitario: precioMap.get(item.producto_id)!,
-  }))
+  // Admin: puede fijar un precio manual para ESTA venta.
+  // Cajero/otros: siempre el precio del catálogo (anti-fraude, ignora el cliente).
+  const admin = esAdmin(perfilData as Perfil | null)
+  const itemsConPrecio = payload.items.map((item) => {
+    const precioCatalogo = precioMap.get(item.producto_id)!
+    const precio =
+      admin && Number.isFinite(item.precio_unitario) && item.precio_unitario >= 0
+        ? redondearPrecio(item.precio_unitario)
+        : precioCatalogo
+    return { producto_id: item.producto_id, cantidad: item.cantidad, precio_unitario: precio }
+  })
 
   // Calcular total en el servidor con los precios reales
   const total = itemsConPrecio.reduce(
@@ -172,6 +178,35 @@ export async function crearVenta(payload: {
   revalidatePath('/dashboard')
   revalidatePath('/comprobantes')
   return { ventaId: venta.id, numeroVenta: venta.numero_venta, numeroComprobante: numeroComprobante ?? undefined }
+}
+
+export async function actualizarPrecioProducto(
+  productoId: string,
+  precio: number
+): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado.' }
+
+  const { data: perfilData } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  const perfil = perfilData as Perfil | null
+
+  // Verificación de rol admin en el servidor (no confiar en el front)
+  if (!esAdmin(perfil)) return { error: 'Solo un administrador puede modificar el precio del producto.' }
+  if (!Number.isFinite(precio) || precio < 0) return { error: 'Precio inválido.' }
+
+  // Edición manual del admin: SÍ puede bajar el precio (a diferencia del import).
+  const nuevoPrecio = redondearPrecio(precio)
+  const { error } = await supabase
+    .from('productos')
+    .update({ precio_venta: nuevoPrecio })
+    .eq('id', productoId)
+    .eq('negocio_id', perfil!.negocio_id)
+
+  if (error) return { error: error.message }
+  revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return {}
 }
 
 export async function convertirVentaAFacturaX(

@@ -9,6 +9,12 @@ export const metadata = { title: 'Punto de Venta — Libra' }
 export default async function NuevaVentaPage() {
   const supabase = createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: perfilRol } = user
+    ? await supabase.from('perfiles').select('rol').eq('user_id', user.id).single()
+    : { data: null }
+  const esAdminUser = perfilRol?.rol === 'admin' || perfilRol?.rol === 'super_admin'
+
   // Inicio del día de hoy en Argentina (UTC-3, sin DST)
   const hoyLocal    = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
   const hoyStartUTC = new Date(`${hoyLocal}T03:00:00.000Z`)
@@ -111,6 +117,7 @@ export default async function NuevaVentaPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       servicios={(serviciosRes.data as any) ?? []}
       metodosActivos={metodosActivos}
+      esAdmin={esAdminUser}
       arqueoAbierto={arqueoAbierto}
       ventasTurnoInicial={ventasTurnoInicial}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
