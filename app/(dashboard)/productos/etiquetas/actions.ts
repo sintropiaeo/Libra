@@ -54,7 +54,7 @@ export async function guardarCodigoGenerado(
 
   const { error } = await supabase
     .from('productos')
-    .update({ codigo_barras: codigo })
+    .update({ codigo_interno: codigo })
     .eq('id', id)
 
   if (error) return { error: error.message }
