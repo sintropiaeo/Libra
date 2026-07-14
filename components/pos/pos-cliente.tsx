@@ -333,7 +333,9 @@ export default function PosCliente({
 
     // Cooldown: el Enter del scanner que terminó de agregar el producto anterior
     // puede llegar al input si el foco se mueve justo en ese instante. Ignorarlo.
-    if (Date.now() - lastAddedRef.current < 300) return
+    // 120 ms alcanza para atrapar ese Enter fantasma (llega en pocos ms y React
+    // limpia el input en ~16 ms) sin bloquear el escaneo rápido del siguiente producto.
+    if (Date.now() - lastAddedRef.current < 120) return
 
     if (resultadosBusqueda.length > 0) {
       const wasScanner = isScannerRef.current
