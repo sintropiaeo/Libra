@@ -87,7 +87,9 @@ const ARS = (v: number) =>
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-type SortField = 'nombre' | 'updated_at'
+type SortField =
+  | 'nombre' | 'codigo_interno' | 'precio_venta'
+  | 'stock_actual' | 'unidad' | 'updated_at' | 'activo'
 type SortDir   = 'asc' | 'desc'
 
 interface Props {
@@ -159,13 +161,29 @@ export default function ProductosCliente({
     navigate({ q: code, p: 1 })
   }, busquedaInputRef)
 
+  // Ciclo de 3 estados por columna: asc → desc → default (nombre asc)
   function handleSort(field: SortField) {
-    if (field === sort) {
-      navigate({ sort: field, dir: dir === 'asc' ? 'desc' : 'asc', p: 1 })
+    if (field !== sort) {
+      navigate({ sort: field, dir: 'asc', p: 1 })
+    } else if (dir === 'asc') {
+      navigate({ sort: field, dir: 'desc', p: 1 })
     } else {
-      navigate({ sort: field, dir: field === 'updated_at' ? 'desc' : 'asc', p: 1 })
+      navigate({ sort: 'nombre', dir: 'asc', p: 1 })
     }
   }
+
+  // Header clickeable con flechita de dirección (↑/↓) o ícono neutro
+  const renderSortButton = (field: SortField, label: string, extraCls = '') => (
+    <button
+      onClick={() => handleSort(field)}
+      className={`flex items-center gap-1 hover:text-slate-600 transition-colors ${extraCls}`}
+    >
+      {label}
+      {sort === field
+        ? dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+    </button>
+  )
 
   function formatRelativo(iso: string | null): string {
     if (!iso) return '—'
@@ -455,34 +473,14 @@ export default function ProductosCliente({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
-                  <th className="px-5 py-3.5">
-                    <button
-                      onClick={() => handleSort('nombre')}
-                      className="flex items-center gap-1 hover:text-slate-600 transition-colors"
-                    >
-                      Nombre
-                      {sort === 'nombre'
-                        ? dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
-                    </button>
-                  </th>
-                  <th className="px-5 py-3.5">Código</th>
+                  <th className="px-5 py-3.5">{renderSortButton('nombre', 'Nombre')}</th>
+                  <th className="px-5 py-3.5">{renderSortButton('codigo_interno', 'Código')}</th>
                   <th className="px-5 py-3.5">Categoría</th>
-                  <th className="px-5 py-3.5">P. Venta</th>
-                  <th className="px-5 py-3.5">Stock</th>
-                  <th className="px-5 py-3.5">Unidad</th>
-                  <th className="px-5 py-3.5">
-                    <button
-                      onClick={() => handleSort('updated_at')}
-                      className="flex items-center gap-1 hover:text-slate-600 transition-colors whitespace-nowrap"
-                    >
-                      Última modificación
-                      {sort === 'updated_at'
-                        ? dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
-                    </button>
-                  </th>
-                  <th className="px-5 py-3.5">Estado</th>
+                  <th className="px-5 py-3.5">{renderSortButton('precio_venta', 'P. Venta')}</th>
+                  <th className="px-5 py-3.5">{renderSortButton('stock_actual', 'Stock')}</th>
+                  <th className="px-5 py-3.5">{renderSortButton('unidad', 'Unidad')}</th>
+                  <th className="px-5 py-3.5">{renderSortButton('updated_at', 'Última modificación', 'whitespace-nowrap')}</th>
+                  <th className="px-5 py-3.5">{renderSortButton('activo', 'Estado')}</th>
                   <th className="px-3 py-3.5 text-center">
                     <Star className="w-3.5 h-3.5 inline text-amber-400 fill-amber-400" />
                   </th>

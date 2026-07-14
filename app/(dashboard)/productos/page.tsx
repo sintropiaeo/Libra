@@ -7,8 +7,14 @@ export const metadata = { title: 'Productos — Libra' }
 
 const PAGE_SIZE = 50
 
-type SortField = 'nombre' | 'updated_at'
+type SortField =
+  | 'nombre' | 'codigo_interno' | 'precio_venta'
+  | 'stock_actual' | 'unidad' | 'updated_at' | 'activo'
 type SortDir   = 'asc' | 'desc'
+
+const SORT_FIELDS: SortField[] = [
+  'nombre', 'codigo_interno', 'precio_venta', 'stock_actual', 'unidad', 'updated_at', 'activo',
+]
 
 export default async function ProductosPage({
   searchParams,
@@ -21,8 +27,8 @@ export default async function ProductosPage({
   const q       = searchParams.q?.trim()   ?? ''
   const cat     = searchParams.cat?.trim() ?? ''
   const page    = Math.max(1, Number(searchParams.p ?? '1'))
-  const sort    = (searchParams.sort === 'updated_at' ? 'updated_at' : 'nombre') as SortField
-  const dir     = (searchParams.dir  === 'asc'        ? 'asc'        : sort === 'updated_at' ? 'desc' : 'asc') as SortDir
+  const sort    = (SORT_FIELDS.includes(searchParams.sort as SortField) ? searchParams.sort : 'nombre') as SortField
+  const dir     = (searchParams.dir === 'desc' ? 'desc' : 'asc') as SortDir
   const from    = (page - 1) * PAGE_SIZE
   const to      = from + PAGE_SIZE - 1
 
@@ -36,7 +42,10 @@ export default async function ProductosPage({
       es_favorito, updated_at,
       categorias ( nombre )
     `, { count: 'exact' })
-    .order(sort, { ascending: dir === 'asc' })
+    // nullsFirst:false → vacíos (ej. codigo_interno) siempre al final en asc y desc
+    .order(sort, { ascending: dir === 'asc', nullsFirst: false })
+    // desempate estable por id: evita filas duplicadas/salteadas entre páginas
+    .order('id', { ascending: true })
     .range(from, to)
 
   if (q)   query = query.or(`nombre.ilike.%${q}%,codigo_barras.eq.${q},codigo_interno.ilike.%${q}%`)
