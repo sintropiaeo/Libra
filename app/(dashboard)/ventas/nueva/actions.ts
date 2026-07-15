@@ -19,6 +19,7 @@ export type ProductoPOS = {
   unidad: string
   permitir_venta_sin_stock: boolean
   es_favorito: boolean
+  tipo?: 'producto' | 'servicio'
   categorias: { nombre: string } | null
 }
 

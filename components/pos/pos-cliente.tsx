@@ -6,7 +6,7 @@ import {
   Search, Plus, Minus, X, Trash2, CheckCircle,
   AlertTriangle, ShoppingCart, Banknote, Smartphone,
   CreditCard, Clock, Package, Printer, Calculator,
-  ChevronDown, ChevronRight, Star, FileText, Pencil,
+  ChevronDown, ChevronRight, FileText, Pencil,
 } from 'lucide-react'
 import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX, actualizarPrecioProducto } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
@@ -119,6 +119,8 @@ export default function PosCliente({
   const [cantServicio,   setCantServicio]   = useState<Record<string, number>>({})
   // Edición de precio en el carrito (solo admin)
   const [editandoPrecioId, setEditandoPrecioId] = useState<string | null>(null)
+  // Toggle del panel de favoritos: Productos | Servicios
+  const [favTab, setFavTab] = useState<'producto' | 'servicio'>('producto')
   // Ventas del turno: arranca con las del servidor, se actualiza en tiempo real con cada cobro
   const [ventasTurno,    setVentasTurno]    = useState<VentaTurno[]>(ventasTurnoInicial)
   // Ventas de hoy: para mostrar en el panel izquierdo
@@ -654,23 +656,46 @@ export default function PosCliente({
           {/* Panel de favoritos */}
           {favoritosIniciales.length > 0 && (
             <div className="shrink-0 bg-white border-b border-slate-100">
-              <p className="px-4 pt-2.5 pb-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                Favoritos
-              </p>
-              <div className="grid gap-2 px-4 pb-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
-                {favoritosIniciales.map((p) => (
+              <div className="flex gap-1 px-4 pt-2.5 pb-1.5">
+                {(['producto', 'servicio'] as const).map((t) => (
                   <button
-                    key={p.id}
-                    onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
-                    title={p.nombre}
-                    className="min-h-[56px] px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97] text-center transition-all flex flex-col items-center justify-center gap-0.5"
+                    key={t}
+                    onClick={() => setFavTab(t)}
+                    className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-lg transition-colors ${
+                      favTab === t
+                        ? 'bg-blue-600 text-white'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                    }`}
                   >
-                    <span className="text-sm font-medium text-slate-800 leading-tight line-clamp-2">{p.nombre}</span>
-                    <span className="text-xs font-semibold text-slate-500">${p.precio_venta.toLocaleString('es-AR')}</span>
+                    {t === 'producto' ? 'Productos' : 'Servicios'}
                   </button>
                 ))}
               </div>
+              {(() => {
+                const favsFiltrados = favoritosIniciales.filter((p) => (p.tipo ?? 'producto') === favTab)
+                if (favsFiltrados.length === 0) {
+                  return (
+                    <p className="px-4 pb-3 pt-1 text-xs text-slate-400">
+                      Sin favoritos de tipo {favTab === 'producto' ? 'producto' : 'servicio'}.
+                    </p>
+                  )
+                }
+                return (
+                  <div className="grid gap-2 px-4 pb-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+                    {favsFiltrados.map((p) => (
+                      <button
+                        key={p.id}
+                        onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
+                        title={p.nombre}
+                        className="min-h-[56px] px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97] text-center transition-all flex flex-col items-center justify-center gap-0.5"
+                      >
+                        <span className="text-sm font-medium text-slate-800 leading-tight line-clamp-2">{p.nombre}</span>
+                        <span className="text-xs font-semibold text-slate-500">${p.precio_venta.toLocaleString('es-AR')}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
           )}
 

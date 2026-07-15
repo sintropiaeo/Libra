@@ -36,6 +36,7 @@ type Producto = {
   codigo_barras: string | null
   codigo_interno: string | null
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
+  tipo: 'producto' | 'servicio'
   activo: boolean
   es_favorito: boolean
   permitir_venta_sin_stock: boolean
@@ -54,6 +55,7 @@ type FormValues = {
   codigo_barras: string
   codigo_interno: string
   unidad: 'unidad' | 'pack' | 'resma' | 'metro'
+  tipo: 'producto' | 'servicio'
   permitir_venta_sin_stock: boolean
 }
 
@@ -77,6 +79,7 @@ const FORM_VACIO: FormValues = {
   codigo_barras:            '',
   codigo_interno:           '',
   unidad:                   'unidad',
+  tipo:                     'producto',
   permitir_venta_sin_stock: true,
 }
 
@@ -271,6 +274,7 @@ export default function ProductosCliente({
       codigo_barras:            p.codigo_barras  ?? '',
       codigo_interno:           p.codigo_interno ?? '',
       unidad:                   p.unidad,
+      tipo:                     p.tipo ?? 'producto',
       permitir_venta_sin_stock: p.permitir_venta_sin_stock ?? true,
     })
     setError(null)
@@ -727,6 +731,21 @@ export default function ProductosCliente({
                       {UNIDADES.map((u) => (
                         <option key={u.value} value={u.value}>{u.label}</option>
                       ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="p-tipo" className={label}>Tipo *</label>
+                    <select
+                      id="p-tipo" name="p-tipo" required
+                      value={form.tipo}
+                      onChange={(e) => setForm({ ...form, tipo: e.target.value as FormValues['tipo'] })}
+                      className={input}
+                    >
+                      <option value="producto">Producto</option>
+                      <option value="servicio">Servicio</option>
                     </select>
                   </div>
                 </div>

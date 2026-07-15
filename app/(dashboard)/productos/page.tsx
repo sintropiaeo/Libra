@@ -38,7 +38,7 @@ export default async function ProductosPage({
       id, nombre, descripcion,
       categoria_id, precio_costo, precio_venta,
       stock_actual, stock_minimo,
-      codigo_barras, codigo_interno, unidad, activo, permitir_venta_sin_stock,
+      codigo_barras, codigo_interno, unidad, tipo, activo, permitir_venta_sin_stock,
       es_favorito, updated_at,
       categorias ( nombre )
     `, { count: 'exact' })

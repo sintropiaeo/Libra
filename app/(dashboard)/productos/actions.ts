@@ -33,6 +33,7 @@ export async function crearProducto(formData: FormData): Promise<ActionResult> {
     codigo_barras:            (formData.get('codigo_barras') as string)?.trim() || null,
     codigo_interno:           (formData.get('codigo_interno') as string)?.trim() || null,
     unidad:                   formData.get('unidad') as string,
+    tipo:                     (formData.get('tipo') === 'servicio' ? 'servicio' : 'producto'),
     permitir_venta_sin_stock: formData.get('permitir_venta_sin_stock') === 'true',
     negocio_id:               negocioId,
   })
@@ -63,6 +64,7 @@ export async function actualizarProducto(
       codigo_barras:            (formData.get('codigo_barras') as string)?.trim() || null,
       codigo_interno:           (formData.get('codigo_interno') as string)?.trim() || null,
       unidad:                   formData.get('unidad') as string,
+      tipo:                     (formData.get('tipo') === 'servicio' ? 'servicio' : 'producto'),
       permitir_venta_sin_stock: formData.get('permitir_venta_sin_stock') === 'true',
     })
     .eq('id', id)
