@@ -20,6 +20,7 @@ export type ProductoPOS = {
   permitir_venta_sin_stock: boolean
   es_favorito: boolean
   tipo?: 'producto' | 'servicio'
+  orden_favorito?: number | null
   categorias: { nombre: string } | null
 }
 
@@ -206,6 +207,31 @@ export async function actualizarPrecioProducto(
 
   if (error) return { error: error.message }
   revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return {}
+}
+
+export async function guardarOrdenFavoritos(ids: string[]): Promise<{ error?: string }> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado.' }
+
+  const { data: perfilData } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  const perfil = perfilData as Perfil | null
+
+  // Solo admin puede reordenar (verificación en servidor, no confiar en el front)
+  if (!esAdmin(perfil)) return { error: 'Solo un administrador puede reordenar favoritos.' }
+
+  // Guardar el orden = índice en la lista, scopeado al negocio
+  for (let i = 0; i < ids.length; i++) {
+    const { error } = await supabase
+      .from('productos')
+      .update({ orden_favorito: i })
+      .eq('id', ids[i])
+      .eq('negocio_id', perfil!.negocio_id)
+    if (error) return { error: error.message }
+  }
+
   revalidatePath('/ventas/nueva')
   return {}
 }

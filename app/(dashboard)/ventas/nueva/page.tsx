@@ -75,10 +75,11 @@ export default async function NuevaVentaPage() {
         id, nombre, descripcion,
         precio_venta, stock_actual, stock_minimo,
         codigo_barras, codigo_interno, unidad, tipo, permitir_venta_sin_stock,
-        es_favorito, categorias ( nombre )
+        es_favorito, orden_favorito, categorias ( nombre )
       `)
       .eq('activo', true)
       .eq('es_favorito', true)
+      .order('orden_favorito', { nullsFirst: false })
       .order('nombre'),
   ])
 

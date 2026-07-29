@@ -8,7 +8,7 @@ import {
   CreditCard, Clock, Package, Printer, Calculator,
   ChevronDown, ChevronRight, FileText, Pencil,
 } from 'lucide-react'
-import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX, actualizarPrecioProducto } from '@/app/(dashboard)/ventas/nueva/actions'
+import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX, actualizarPrecioProducto, guardarOrdenFavoritos } from '@/app/(dashboard)/ventas/nueva/actions'
 import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import { obtenerVentaDetalle } from '@/app/(dashboard)/comprobantes/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
@@ -121,6 +121,12 @@ export default function PosCliente({
   const [editandoPrecioId, setEditandoPrecioId] = useState<string | null>(null)
   // Toggle del panel de favoritos: Productos | Servicios
   const [favTab, setFavTab] = useState<'producto' | 'servicio'>('producto')
+  // Reordenar favoritos (solo admin)
+  const [favoritosLocal, setFavoritosLocal] = useState<Producto[]>(favoritosIniciales)
+  useEffect(() => { setFavoritosLocal(favoritosIniciales) }, [favoritosIniciales])
+  const [editandoFavoritos, setEditandoFavoritos] = useState(false)
+  const [dragFavIndex,      setDragFavIndex]      = useState<number | null>(null)
+  const [guardandoOrden,    setGuardandoOrden]    = useState(false)
   // Ventas del turno: arranca con las del servidor, se actualiza en tiempo real con cada cobro
   const [ventasTurno,    setVentasTurno]    = useState<VentaTurno[]>(ventasTurnoInicial)
   // Ventas de hoy: para mostrar en el panel izquierdo
@@ -321,6 +327,29 @@ export default function PosCliente({
     setCart((prev) => prev.map((i) =>
       i.producto_id === id ? { ...i, actualizarProducto: !i.actualizarProducto } : i
     ))
+  }
+
+  // ─── Reordenar favoritos (solo admin) ───────────────────────────────────────
+
+  function reordenarFavoritos(fromVisibleIdx: number, toVisibleIdx: number) {
+    if (fromVisibleIdx === toVisibleIdx) return
+    setFavoritosLocal((prev) => {
+      const visibles = prev.filter((p) => (p.tipo ?? 'producto') === favTab)
+      const otros    = prev.filter((p) => (p.tipo ?? 'producto') !== favTab)
+      const nuevos   = [...visibles]
+      const [moved]  = nuevos.splice(fromVisibleIdx, 1)
+      nuevos.splice(toVisibleIdx, 0, moved)
+      return [...nuevos, ...otros]
+    })
+  }
+
+  async function guardarOrden() {
+    setGuardandoOrden(true)
+    const result = await guardarOrdenFavoritos(favoritosLocal.map((p) => p.id))
+    setGuardandoOrden(false)
+    if (result?.error) { showToast('error', result.error); return }
+    setEditandoFavoritos(false)
+    showToast('success', 'Orden de favoritos guardado')
   }
 
   const total         = cart.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0)
@@ -654,25 +683,45 @@ export default function PosCliente({
           </div>
 
           {/* Panel de favoritos */}
-          {favoritosIniciales.length > 0 && (
+          {favoritosLocal.length > 0 && (
             <div className="shrink-0 bg-white border-b border-slate-100">
-              <div className="flex gap-1 px-4 pt-2.5 pb-1.5">
-                {(['producto', 'servicio'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setFavTab(t)}
-                    className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-lg transition-colors ${
-                      favTab === t
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    {t === 'producto' ? 'Productos' : 'Servicios'}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between gap-2 px-4 pt-2.5 pb-1.5">
+                <div className="flex gap-1">
+                  {(['producto', 'servicio'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setFavTab(t)}
+                      className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-lg transition-colors ${
+                        favTab === t
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {t === 'producto' ? 'Productos' : 'Servicios'}
+                    </button>
+                  ))}
+                </div>
+                {esAdmin && (
+                  editandoFavoritos ? (
+                    <button
+                      onClick={guardarOrden}
+                      disabled={guardandoOrden}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white transition-colors"
+                    >
+                      {guardandoOrden ? 'Guardando…' : 'Listo'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setEditandoFavoritos(true)}
+                      className="text-xs font-medium px-2.5 py-1 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                    >
+                      Editar orden
+                    </button>
+                  )
+                )}
               </div>
               {(() => {
-                const favsFiltrados = favoritosIniciales.filter((p) => (p.tipo ?? 'producto') === favTab)
+                const favsFiltrados = favoritosLocal.filter((p) => (p.tipo ?? 'producto') === favTab)
                 if (favsFiltrados.length === 0) {
                   return (
                     <p className="px-4 pb-3 pt-1 text-xs text-slate-400">
@@ -682,12 +731,21 @@ export default function PosCliente({
                 }
                 return (
                   <div className="grid gap-2 px-4 pb-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
-                    {favsFiltrados.map((p) => (
+                    {favsFiltrados.map((p, idx) => (
                       <button
                         key={p.id}
-                        onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
+                        draggable={editandoFavoritos}
+                        onDragStart={editandoFavoritos ? () => setDragFavIndex(idx) : undefined}
+                        onDragOver={editandoFavoritos ? (e) => e.preventDefault() : undefined}
+                        onDrop={editandoFavoritos ? () => { if (dragFavIndex !== null) reordenarFavoritos(dragFavIndex, idx); setDragFavIndex(null) } : undefined}
+                        onDragEnd={editandoFavoritos ? () => setDragFavIndex(null) : undefined}
+                        onMouseDown={editandoFavoritos ? undefined : (e) => { e.preventDefault(); agregarAlCarrito(p) }}
                         title={p.nombre}
-                        className="min-h-[56px] px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97] text-center transition-all flex flex-col items-center justify-center gap-0.5"
+                        className={`min-h-[56px] px-3 py-2 rounded-xl border bg-white text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                          editandoFavoritos
+                            ? `cursor-move border-dashed border-blue-300 hover:border-blue-500 ${dragFavIndex === idx ? 'opacity-40' : ''}`
+                            : 'border-slate-200 hover:bg-slate-100 hover:border-slate-300 active:scale-[0.97]'
+                        }`}
                       >
                         <span className="text-sm font-medium text-slate-800 leading-tight line-clamp-2">{p.nombre}</span>
                         <span className="text-xs font-semibold text-slate-500">${p.precio_venta.toLocaleString('es-AR')}</span>
