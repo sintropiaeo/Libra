@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import ProductosCliente from '@/components/productos/productos-cliente'
 import type { Perfil } from '@/lib/permisos'
-import { puedeEditarProductos } from '@/lib/permisos'
+import { puedeEditarProductos, esAdmin } from '@/lib/permisos'
 
 export const metadata = { title: 'Productos — Libra' }
 
@@ -40,7 +40,8 @@ export default async function ProductosPage({
       stock_actual, stock_minimo,
       codigo_barras, codigo_interno, unidad, tipo, activo, permitir_venta_sin_stock,
       es_favorito, updated_at,
-      categorias ( nombre )
+      categorias ( nombre ),
+      presentaciones:producto_presentaciones ( count )
     `, { count: 'exact' })
     // nullsFirst:false → vacíos (ej. codigo_interno) siempre al final en asc y desc
     .order(sort, { ascending: dir === 'asc', nullsFirst: false })
@@ -66,6 +67,7 @@ export default async function ProductosPage({
       pageSize={PAGE_SIZE}
       categorias={categorias ?? []}
       puedeEditar={puedeEditarProductos(perfilData as Perfil | null)}
+      esAdmin={esAdmin(perfilData as Perfil | null)}
       q={q}
       cat={cat}
       sort={sort}

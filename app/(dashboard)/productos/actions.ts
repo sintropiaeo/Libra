@@ -2,8 +2,9 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { puedeEditarProductos } from '@/lib/permisos'
+import { puedeEditarProductos, esAdmin } from '@/lib/permisos'
 import type { Perfil } from '@/lib/permisos'
+import { redondearPrecio } from '@/lib/utils'
 
 type ActionResult = { error?: string; success?: boolean }
 
@@ -14,6 +15,17 @@ async function verificarEditorProductos() {
   const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
   const perfil = data as Perfil | null
   if (!puedeEditarProductos(perfil)) return null
+  return { supabase, negocioId: perfil!.negocio_id }
+}
+
+// Presentaciones: gestión limitada a admin (RLS también lo exige)
+async function verificarAdminProductos() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
+  const perfil = data as Perfil | null
+  if (!esAdmin(perfil)) return null
   return { supabase, negocioId: perfil!.negocio_id }
 }
 
@@ -115,6 +127,108 @@ export async function eliminarProducto(id: string): Promise<ActionResult> {
   const { supabase } = ctx
   const { error } = await supabase.from('productos').delete().eq('id', id)
   if (error) return { error: error.message }
+  revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return { success: true }
+}
+
+// ─── Presentaciones de producto (solo admin) ──────────────────────────────────
+
+export type PresentacionInput = {
+  nombre:        string
+  cantidad_base: number
+  precio_venta:  number
+  codigo_barras: string | null
+  activo:        boolean
+}
+
+export async function crearPresentacion(
+  productoId: string,
+  input: PresentacionInput
+): Promise<{ error?: string; id?: string }> {
+  const ctx = await verificarAdminProductos()
+  if (!ctx) return { error: 'Solo un administrador puede gestionar presentaciones.' }
+  const { supabase, negocioId } = ctx
+
+  if (!input.nombre?.trim()) return { error: 'El nombre es obligatorio.' }
+  if (!Number.isFinite(input.cantidad_base) || input.cantidad_base < 1) {
+    return { error: 'La cantidad base debe ser 1 o más.' }
+  }
+
+  // Validar que el producto pertenece al negocio del usuario (regla 5)
+  const { data: prod } = await supabase
+    .from('productos').select('id').eq('id', productoId).eq('negocio_id', negocioId).maybeSingle()
+  if (!prod) return { error: 'El producto no existe o no pertenece a este negocio.' }
+
+  const { data, error } = await supabase
+    .from('producto_presentaciones')
+    .insert({
+      producto_id:   productoId,
+      nombre:        input.nombre.trim(),
+      cantidad_base: Math.floor(input.cantidad_base),
+      precio_venta:  redondearPrecio(input.precio_venta ?? 0),
+      codigo_barras: input.codigo_barras?.trim() || null,
+      activo:        input.activo ?? true,
+      negocio_id:    negocioId,
+    })
+    .select('id')
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return { id: data.id }
+}
+
+export async function actualizarPresentacion(
+  id: string,
+  input: PresentacionInput
+): Promise<ActionResult> {
+  const ctx = await verificarAdminProductos()
+  if (!ctx) return { error: 'Solo un administrador puede gestionar presentaciones.' }
+  const { supabase, negocioId } = ctx
+
+  if (!input.nombre?.trim()) return { error: 'El nombre es obligatorio.' }
+  if (!Number.isFinite(input.cantidad_base) || input.cantidad_base < 1) {
+    return { error: 'La cantidad base debe ser 1 o más.' }
+  }
+
+  const { error } = await supabase
+    .from('producto_presentaciones')
+    .update({
+      nombre:        input.nombre.trim(),
+      cantidad_base: Math.floor(input.cantidad_base),
+      precio_venta:  redondearPrecio(input.precio_venta ?? 0),
+      codigo_barras: input.codigo_barras?.trim() || null,
+      activo:        input.activo ?? true,
+    })
+    .eq('id', id)
+    .eq('negocio_id', negocioId)
+
+  if (error) return { error: error.message }
+  revalidatePath('/productos')
+  revalidatePath('/ventas/nueva')
+  return { success: true }
+}
+
+export async function eliminarPresentacion(id: string): Promise<ActionResult> {
+  const ctx = await verificarAdminProductos()
+  if (!ctx) return { error: 'Solo un administrador puede gestionar presentaciones.' }
+  const { supabase, negocioId } = ctx
+
+  const { error } = await supabase
+    .from('producto_presentaciones')
+    .delete()
+    .eq('id', id)
+    .eq('negocio_id', negocioId)
+
+  if (error) {
+    // FK ON DELETE RESTRICT: si la presentación ya fue usada en ventas/compras
+    if (error.code === '23503') {
+      return { error: 'No se puede eliminar: esta presentación ya se usó en ventas o compras. Desactivala en su lugar.' }
+    }
+    return { error: error.message }
+  }
   revalidatePath('/productos')
   revalidatePath('/ventas/nueva')
   return { success: true }

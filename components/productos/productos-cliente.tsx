@@ -19,6 +19,7 @@ import {
 import { redondearPrecio } from '@/lib/utils'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import ImportarModal from '@/components/productos/importar-modal'
+import PresentacionesModal from '@/components/productos/presentaciones-modal'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ type Producto = {
   permitir_venta_sin_stock: boolean
   updated_at: string | null
   categorias: { nombre: string } | null
+  presentaciones?: { count: number }[]
 }
 
 type FormValues = {
@@ -102,6 +104,7 @@ interface Props {
   pageSize:    number
   categorias:  Categoria[]
   puedeEditar?: boolean
+  esAdmin?:    boolean
   q:           string
   cat:         string
   sort:        SortField
@@ -109,7 +112,7 @@ interface Props {
 }
 
 export default function ProductosCliente({
-  productos, total, page, pageSize, categorias, puedeEditar = true, q, cat, sort, dir,
+  productos, total, page, pageSize, categorias, puedeEditar = true, esAdmin = false, q, cat, sort, dir,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -130,6 +133,9 @@ export default function ProductosCliente({
 
   // Modal importar
   const [modalImportar, setModalImportar] = useState(false)
+
+  // Sub-modal de presentaciones (solo admin)
+  const [presentacionesDe, setPresentacionesDe] = useState<Producto | null>(null)
 
   // Confirmación de eliminación
   const [confirmEliminar, setConfirmEliminar] = useState(false)
@@ -501,7 +507,15 @@ export default function ProductosCliente({
                       className={`transition-colors ${puedeEditar ? 'hover:bg-slate-50 cursor-pointer' : ''}`}
                     >
                       <td className="px-5 py-4 max-w-xs">
-                        <p className="font-medium text-slate-800">{p.nombre}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium text-slate-800">{p.nombre}</p>
+                          {(p.presentaciones?.[0]?.count ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                              <Package className="w-3 h-3" />
+                              {p.presentaciones![0].count}
+                            </span>
+                          )}
+                        </div>
                         {p.codigo_barras && (
                           <p className="text-xs text-slate-500 mt-0.5 font-mono">{p.codigo_barras}</p>
                         )}
@@ -824,7 +838,7 @@ export default function ProductosCliente({
               </div>
 
               <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
-                <div>
+                <div className="flex items-center gap-1">
                   {productoEditando && (
                     <button
                       type="button"
@@ -833,6 +847,16 @@ export default function ProductosCliente({
                     >
                       <Trash2 className="w-4 h-4" />
                       Eliminar
+                    </button>
+                  )}
+                  {productoEditando && esAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setPresentacionesDe(productoEditando)}
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                      <Package className="w-4 h-4" />
+                      Presentaciones
                     </button>
                   )}
                 </div>
@@ -905,6 +929,15 @@ export default function ProductosCliente({
             setModalImportar(false)
             startTransition(() => router.refresh())
           }}
+        />
+      )}
+
+      {presentacionesDe && (
+        <PresentacionesModal
+          productoId={presentacionesDe.id}
+          productoNombre={presentacionesDe.nombre}
+          onClose={() => setPresentacionesDe(null)}
+          onChanged={() => startTransition(() => router.refresh())}
         />
       )}
     </div>
