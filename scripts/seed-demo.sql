@@ -303,7 +303,7 @@ INSERT INTO productos (nombre, categoria_id, precio_costo, precio_venta, stock_a
 VALUES ('Abrochadora metálica 26/6', v_cat_varios, 2500, 4500, 30, 5, 'ABR-001', 'unidad', true, v_negocio_id);
 
 INSERT INTO productos (nombre, categoria_id, precio_costo, precio_venta, stock_actual, stock_minimo, codigo_interno, unidad, activo, negocio_id)
-VALUES ('Caja grapas 26/6 x1000', v_cat_varios, 400, 700, 90, 10, 'GRA-001', 'caja', true, v_negocio_id);
+VALUES ('Caja grapas 26/6 x1000', v_cat_varios, 400, 700, 90, 10, 'GRA-001', 'unidad', true, v_negocio_id);
 
 INSERT INTO productos (nombre, categoria_id, precio_costo, precio_venta, stock_actual, stock_minimo, codigo_interno, unidad, activo, negocio_id)
 VALUES ('Calculadora básica 12 dígitos', v_cat_varios, 4500, 8000, 30, 5, 'CAL-001', 'unidad', true, v_negocio_id);

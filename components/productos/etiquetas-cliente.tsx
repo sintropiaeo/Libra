@@ -20,15 +20,18 @@ type ItemEtiqueta = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function generarCodigo(id: string): string {
+function generarCodigo(id: string, tipo: 'producto' | 'presentacion'): string {
   const num = parseInt(id.replace(/-/g, '').slice(-6), 16) % 100000
-  return `LIB${String(num).padStart(5, '0')}`
+  // Prefijo distinto para presentaciones (LIP) así nunca choca con el código
+  // interno de un producto (LIB) al escanear.
+  const prefijo = tipo === 'presentacion' ? 'LIP' : 'LIB'
+  return `${prefijo}${String(num).padStart(5, '0')}`
 }
 
 function resolverCodigo(p: ProductoEtiqueta): { codigo: string; generado: boolean } {
   if (p.codigo_barras)  return { codigo: p.codigo_barras,  generado: false }
   if (p.codigo_interno) return { codigo: p.codigo_interno,  generado: false }
-  return { codigo: generarCodigo(p.id), generado: true }
+  return { codigo: generarCodigo(p.id, p.tipo), generado: true }
 }
 
 const ARS = (v: number) =>
@@ -167,7 +170,7 @@ export default function EtiquetasCliente() {
     // Guardar códigos generados en Supabase
     const generados = lista.filter(i => i.generado)
     for (const item of generados) {
-      const { error } = await guardarCodigoGenerado(item.producto.id, item.codigoEfectivo)
+      const { error } = await guardarCodigoGenerado(item.producto.id, item.codigoEfectivo, item.producto.tipo)
       if (error) {
         setErrorGuard(`Error al guardar código de ${item.producto.nombre}: ${error}`)
         setGuardando(false)
@@ -297,7 +300,14 @@ body{font-family:Arial,sans-serif}
                           className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{p.nombre}</p>
+                          <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
+                            <span className="truncate">{p.nombre}</span>
+                            {p.tipo === 'presentacion' && (
+                              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                                presentación
+                              </span>
+                            )}
+                          </p>
                           <p className="text-xs text-slate-500">
                             {p.codigo_barras ?? p.codigo_interno ?? 'Sin código'} · {ARS(p.precio_venta)}
                           </p>
@@ -339,7 +349,14 @@ body{font-family:Arial,sans-serif}
                 {lista.map(item => (
                   <div key={item.producto.id} className="flex items-center gap-3 py-2.5">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{item.producto.nombre}</p>
+                      <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
+                        <span className="truncate">{item.producto.nombre}</span>
+                        {item.producto.tipo === 'presentacion' && (
+                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                            presentación
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-500">
                         {item.codigoEfectivo}
                         {item.generado && (
