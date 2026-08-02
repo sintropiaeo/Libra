@@ -17,6 +17,7 @@ async function verificarRegistradorCompras() {
 
 type ItemCompra = {
   producto_id: string
+  presentacion_id?: string | null
   cantidad: number
   precio_unitario: number
 }
@@ -37,6 +38,27 @@ export async function crearCompra(payload: {
 
   if (!payload.items.length) {
     return { error: 'Agregá al menos un producto.' }
+  }
+
+  // Validar presentaciones (si las hay): existen, activas y pertenecen al producto + negocio
+  const presIds = Array.from(
+    new Set(payload.items.map((i) => i.presentacion_id).filter((x): x is string => !!x))
+  )
+  if (presIds.length) {
+    const { data: presRows, error: presErr } = await supabase
+      .from('producto_presentaciones')
+      .select('id, producto_id, activo')
+      .in('id', presIds)
+      .eq('negocio_id', negocioId)
+    if (presErr) return { error: presErr.message }
+    const presMap = new Map((presRows ?? []).map((r) => [r.id, r]))
+    for (const item of payload.items) {
+      if (!item.presentacion_id) continue
+      const pres = presMap.get(item.presentacion_id)
+      if (!pres)                                return { error: 'Una presentación no es válida o no pertenece a este negocio.' }
+      if (!pres.activo)                         return { error: 'Una presentación seleccionada está inactiva.' }
+      if (pres.producto_id !== item.producto_id) return { error: 'Una presentación no corresponde a su producto.' }
+    }
   }
 
   const total = payload.items.reduce(
@@ -72,6 +94,7 @@ export async function crearCompra(payload: {
     payload.items.map((item) => ({
       compra_id:       compra.id,
       producto_id:     item.producto_id,
+      presentacion_id: item.presentacion_id ?? null,
       cantidad:        item.cantidad,
       precio_unitario: item.precio_unitario,
       negocio_id:      negocioId,

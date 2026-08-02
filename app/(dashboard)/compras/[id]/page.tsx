@@ -25,7 +25,8 @@ export default async function CompraDetallePage({
       proveedores ( id, nombre ),
       compra_items (
         id, cantidad, precio_unitario, subtotal,
-        productos ( nombre, unidad, codigo_barras )
+        productos ( nombre, unidad, codigo_barras ),
+        producto_presentaciones ( nombre, cantidad_base )
       )
     `)
     .eq('id', params.id)
@@ -58,6 +59,7 @@ export default async function CompraDetallePage({
     precio_unitario: number
     subtotal: number
     productos: { nombre: string; unidad: string; codigo_barras: string | null } | null
+    producto_presentaciones: { nombre: string; cantidad_base: number } | null
   }[]
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,15 +147,25 @@ export default async function CompraDetallePage({
             {items.map((item) => (
               <tr key={item.id}>
                 <td className="px-5 py-3.5">
-                  <p className="font-medium text-slate-800">
-                    {item.productos?.nombre ?? 'Producto eliminado'}
+                  <p className="font-medium text-slate-800 flex items-center gap-1.5">
+                    <span>{item.productos?.nombre ?? 'Producto eliminado'}</span>
+                    {item.producto_presentaciones && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                        {item.producto_presentaciones.nombre}
+                      </span>
+                    )}
                   </p>
                   {item.productos?.codigo_barras && (
                     <p className="text-xs text-slate-400">#{item.productos.codigo_barras}</p>
                   )}
+                  {item.producto_presentaciones && (
+                    <p className="text-xs text-violet-600">
+                      +{item.cantidad * item.producto_presentaciones.cantidad_base} {item.productos?.unidad ?? ''} al stock
+                    </p>
+                  )}
                 </td>
                 <td className="px-5 py-3.5 text-right text-slate-600">
-                  {item.cantidad} {item.productos?.unidad ?? ''}
+                  {item.cantidad} {item.producto_presentaciones ? '' : (item.productos?.unidad ?? '')}
                 </td>
                 <td className="px-5 py-3.5 text-right text-slate-600">
                   {ARS(item.precio_unitario)}

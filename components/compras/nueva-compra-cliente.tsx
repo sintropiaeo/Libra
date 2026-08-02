@@ -13,6 +13,13 @@ import { createClient } from '@/lib/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+type Presentacion = {
+  id: string
+  nombre: string
+  cantidad_base: number
+  codigo_barras: string | null
+}
+
 type Producto = {
   id: string
   nombre: string
@@ -21,6 +28,7 @@ type Producto = {
   unidad: string
   codigo_barras: string | null
   categorias: { nombre: string } | null
+  presentaciones?: Presentacion[]
 }
 
 type Proveedor = {
@@ -29,12 +37,19 @@ type Proveedor = {
 }
 
 type CartItem = {
+  lineId: string                    // producto_id::presentacion_id|base
   producto_id: string
+  presentacion_id: string | null
+  presentacion_nombre: string | null
+  cantidad_base: number             // factor de stock (1 para el producto base)
   nombre: string
-  precio_unitario: number   // puede diferir del precio_costo original
+  precio_unitario: number           // puede diferir del precio_costo original
   unidad: string
   cantidad: number
 }
+
+const lineKey = (productoId: string, presentacionId?: string | null) =>
+  `${productoId}::${presentacionId ?? 'base'}`
 
 type CambioPrecio = {
   producto_id: string
@@ -97,6 +112,9 @@ export default function NuevaCompraCliente({
   const [modalPrecios,  setModalPrecios]  = useState(false)
   const [cambiosPrecios, setCambiosPrecios] = useState<CambioPrecio[]>([])
 
+  // ─── Selector de presentación al agregar ──────────────────────────────────
+  const [selectorProducto, setSelectorProducto] = useState<Producto | null>(null)
+
   useEffect(() => { searchRef.current?.focus() }, [])
 
   // ─── Filtrado ──────────────────────────────────────────────────────────────
@@ -104,86 +122,123 @@ export default function NuevaCompraCliente({
   const productosFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     if (!q) return productosLocales.slice(0, 40)
+    const raw = busqueda.trim()
     return productosLocales
       .filter(
         (p) =>
           p.nombre.toLowerCase().includes(q) ||
-          (p.codigo_barras && p.codigo_barras.includes(busqueda.trim()))
+          (p.codigo_barras && p.codigo_barras.includes(raw)) ||
+          (p.presentaciones ?? []).some(
+            (pres) =>
+              pres.nombre.toLowerCase().includes(q) ||
+              (pres.codigo_barras && pres.codigo_barras.includes(raw))
+          )
       )
       .slice(0, 40)
   }, [productosLocales, busqueda])
 
   // ─── Carrito ───────────────────────────────────────────────────────────────
 
-  function agregarAlCarrito(p: Producto) {
+  function agregarAlCarrito(p: Producto, presentacion: Presentacion | null = null) {
+    const lid = lineKey(p.id, presentacion?.id)
+    // Costo sugerido: para el base = precio_costo; para presentación = precio_costo × cantidad_base
+    const costoSugerido = presentacion
+      ? Math.round(p.precio_costo * presentacion.cantidad_base)
+      : p.precio_costo
+
     setCart((prev) => {
-      const existing = prev.find((i) => i.producto_id === p.id)
+      const existing = prev.find((i) => i.lineId === lid)
       if (existing) {
-        return prev.map((i) =>
-          i.producto_id === p.id ? { ...i, cantidad: i.cantidad + 1 } : i
-        )
+        return prev.map((i) => i.lineId === lid ? { ...i, cantidad: i.cantidad + 1 } : i)
       }
-      // Registrar precio original si no existe (por productos creados inline)
-      if (!preciosOriginalesRef.current.has(p.id)) {
+      // Registrar precio original del base si no existe (para el flujo de cambios de precio)
+      if (!presentacion && !preciosOriginalesRef.current.has(p.id)) {
         preciosOriginalesRef.current.set(p.id, p.precio_costo)
       }
-      setPreciosStr((prev) => ({ ...prev, [p.id]: String(p.precio_costo) }))
+      setPreciosStr((prevP) => ({ ...prevP, [lid]: String(costoSugerido) }))
       return [
         ...prev,
         {
-          producto_id:     p.id,
-          nombre:          p.nombre,
-          precio_unitario: p.precio_costo,
-          unidad:          p.unidad,
-          cantidad:        1,
+          lineId:              lid,
+          producto_id:         p.id,
+          presentacion_id:     presentacion?.id ?? null,
+          presentacion_nombre: presentacion?.nombre ?? null,
+          cantidad_base:       presentacion?.cantidad_base ?? 1,
+          nombre:              p.nombre,
+          precio_unitario:     costoSugerido,
+          unidad:              p.unidad,
+          cantidad:            1,
         },
       ]
     })
+    setSelectorProducto(null)
     setBusqueda('')
     setTimeout(() => searchRef.current?.focus(), 0)
   }
 
-  function incrementar(id: string) {
+  // Al hacer clic en un producto: si tiene presentaciones, abrir selector; si no, agregar base
+  function pedirAgregar(p: Producto) {
+    if ((p.presentaciones?.length ?? 0) > 0) {
+      setSelectorProducto(p)
+    } else {
+      agregarAlCarrito(p)
+    }
+  }
+
+  // Al escanear/tipear + Enter: resolver por código exacto (presentación o base) antes de abrir selector
+  function agregarDesdeBusqueda() {
+    const code = busqueda.trim()
+    if (code) {
+      for (const p of productosLocales) {
+        const pres = (p.presentaciones ?? []).find((x) => x.codigo_barras === code)
+        if (pres) { agregarAlCarrito(p, pres); return }
+        if (p.codigo_barras === code) { agregarAlCarrito(p); return }
+      }
+    }
+    if (productosFiltrados.length > 0) pedirAgregar(productosFiltrados[0])
+  }
+
+  function incrementar(lid: string) {
     setCart((prev) =>
-      prev.map((i) => i.producto_id === id ? { ...i, cantidad: i.cantidad + 1 } : i)
+      prev.map((i) => i.lineId === lid ? { ...i, cantidad: i.cantidad + 1 } : i)
     )
   }
 
-  function decrementar(id: string) {
+  function decrementar(lid: string) {
     setCart((prev) => {
-      const item = prev.find((i) => i.producto_id === id)
+      const item = prev.find((i) => i.lineId === lid)
       if (!item) return prev
       if (item.cantidad <= 1) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [id]: _removed, ...rest } = preciosStr
+        const { [lid]: _removed, ...rest } = preciosStr
         setPreciosStr(rest)
-        return prev.filter((i) => i.producto_id !== id)
+        return prev.filter((i) => i.lineId !== lid)
       }
-      return prev.map((i) => i.producto_id === id ? { ...i, cantidad: i.cantidad - 1 } : i)
+      return prev.map((i) => i.lineId === lid ? { ...i, cantidad: i.cantidad - 1 } : i)
     })
   }
 
-  function setCantidad(id: string, v: number) {
+  function setCantidad(lid: string, v: number) {
     if (isNaN(v) || v < 1) return
     setCart((prev) =>
-      prev.map((i) => i.producto_id === id ? { ...i, cantidad: v } : i)
+      prev.map((i) => i.lineId === lid ? { ...i, cantidad: v } : i)
     )
   }
 
-  function handlePrecioChange(id: string, raw: string) {
-    setPreciosStr((prev) => ({ ...prev, [id]: raw }))
+  function handlePrecioChange(lid: string, raw: string) {
+    setPreciosStr((prev) => ({ ...prev, [lid]: raw }))
     const v = parseFloat(raw.replace(',', '.'))
     if (!isNaN(v) && v >= 0) {
       setCart((prev) =>
-        prev.map((i) => i.producto_id === id ? { ...i, precio_unitario: v } : i)
+        prev.map((i) => i.lineId === lid ? { ...i, precio_unitario: v } : i)
       )
     }
   }
 
-  function eliminar(id: string) {
-    setCart((prev) => prev.filter((i) => i.producto_id !== id))
+  function eliminar(lid: string) {
+    setCart((prev) => prev.filter((i) => i.lineId !== lid))
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    setPreciosStr((prev) => { const { [id]: _removed, ...rest } = prev; return rest })
+    setPreciosStr((prev) => { const { [lid]: _removed, ...rest } = prev; return rest })
   }
 
   function vaciar() {
@@ -196,9 +251,9 @@ export default function NuevaCompraCliente({
   const cantidadItems = cart.reduce((s, i) => s + i.cantidad, 0)
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && productosFiltrados.length > 0) {
+    if (e.key === 'Enter') {
       e.preventDefault()
-      agregarAlCarrito(productosFiltrados[0])
+      agregarDesdeBusqueda()
     }
   }
 
@@ -233,16 +288,21 @@ export default function NuevaCompraCliente({
     setProductosLocales((prev) => [...prev, nuevo])
     preciosOriginalesRef.current.set(nuevo.id, nuevo.precio_costo)
 
-    // Agregarlo al carrito directamente
-    setPreciosStr((prev) => ({ ...prev, [nuevo.id]: String(nuevo.precio_costo) }))
+    // Agregarlo al carrito directamente (producto base, sin presentación)
+    const lidNuevo = lineKey(nuevo.id)
+    setPreciosStr((prev) => ({ ...prev, [lidNuevo]: String(nuevo.precio_costo) }))
     setCart((prev) => [
       ...prev,
       {
-        producto_id:     nuevo.id,
-        nombre:          nuevo.nombre,
-        precio_unitario: nuevo.precio_costo,
-        unidad:          nuevo.unidad,
-        cantidad:        1,
+        lineId:              lidNuevo,
+        producto_id:         nuevo.id,
+        presentacion_id:     null,
+        presentacion_nombre: null,
+        cantidad_base:       1,
+        nombre:              nuevo.nombre,
+        precio_unitario:     nuevo.precio_costo,
+        unidad:              nuevo.unidad,
+        cantidad:            1,
       },
     ])
 
@@ -256,9 +316,11 @@ export default function NuevaCompraCliente({
   function handleConfirmarClick() {
     if (cart.length === 0 || procesando) return
 
-    // Comparar precio_unitario de cada ítem con el precio_costo original
+    // Comparar precio_unitario con el precio_costo original — solo líneas de producto base
+    // (una presentación no tiene un costo unitario comparable con el catálogo)
     const cambios: CambioPrecio[] = cart
       .filter((item) => {
+        if (item.presentacion_id) return false
         const original = preciosOriginalesRef.current.get(item.producto_id)
         return original !== undefined && Math.abs(original - item.precio_unitario) > 0.001
       })
@@ -306,6 +368,7 @@ export default function NuevaCompraCliente({
       proveedor_id: proveedorId || null,
       items: cart.map((i) => ({
         producto_id:     i.producto_id,
+        presentacion_id: i.presentacion_id,
         cantidad:        i.cantidad,
         precio_unitario: i.precio_unitario,
       })),
@@ -421,11 +484,18 @@ export default function NuevaCompraCliente({
                 {productosFiltrados.map((p) => (
                   <li key={p.id}>
                     <button
-                      onClick={() => agregarAlCarrito(p)}
+                      onClick={() => pedirAgregar(p)}
                       className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-blue-50 active:bg-blue-100 transition-colors group text-left"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-800 truncate">{p.nombre}</p>
+                        <p className="font-medium text-slate-800 truncate flex items-center gap-1.5">
+                          <span className="truncate">{p.nombre}</span>
+                          {(p.presentaciones?.length ?? 0) > 0 && (
+                            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                              {p.presentaciones!.length} pres.
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-slate-400 mt-0.5">
                           {p.categorias?.nombre ?? '—'} · {p.unidad}
                           {p.codigo_barras && (
@@ -518,17 +588,24 @@ export default function NuevaCompraCliente({
                 ) : (
                   <ul className="divide-y divide-slate-100 px-4 py-1">
                     {cart.map((item) => {
-                      const original = preciosOriginalesRef.current.get(item.producto_id)
+                      const original = item.presentacion_id ? undefined : preciosOriginalesRef.current.get(item.producto_id)
                       const precioCambio = original !== undefined && Math.abs(original - item.precio_unitario) > 0.001
                       return (
-                        <li key={item.producto_id} className="py-3">
+                        <li key={item.lineId} className="py-3">
                           {/* Nombre */}
                           <div className="flex items-start justify-between gap-2 mb-2">
-                            <p className="font-medium text-slate-800 text-sm leading-tight">
-                              {item.nombre}
-                            </p>
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-800 text-sm leading-tight">
+                                {item.nombre}
+                              </p>
+                              {item.presentacion_id && (
+                                <span className="inline-block mt-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                                  {item.presentacion_nombre}
+                                </span>
+                              )}
+                            </div>
                             <button
-                              onClick={() => eliminar(item.producto_id)}
+                              onClick={() => eliminar(item.lineId)}
                               className="text-slate-300 hover:text-red-500 transition-colors shrink-0 mt-0.5"
                             >
                               <X className="w-4 h-4" />
@@ -539,7 +616,7 @@ export default function NuevaCompraCliente({
                             {/* Cantidad */}
                             <div className="flex items-center gap-1">
                               <button
-                                onClick={() => decrementar(item.producto_id)}
+                                onClick={() => decrementar(item.lineId)}
                                 className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
                               >
                                 <Minus className="w-3 h-3 text-slate-600" />
@@ -549,12 +626,12 @@ export default function NuevaCompraCliente({
                                 min={1}
                                 value={item.cantidad}
                                 onChange={(e) =>
-                                  setCantidad(item.producto_id, parseInt(e.target.value))
+                                  setCantidad(item.lineId, parseInt(e.target.value))
                                 }
                                 className="w-11 text-center text-sm font-bold text-slate-900 border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                               <button
-                                onClick={() => incrementar(item.producto_id)}
+                                onClick={() => incrementar(item.lineId)}
                                 className="w-7 h-7 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-colors"
                               >
                                 <Plus className="w-3 h-3" />
@@ -568,14 +645,14 @@ export default function NuevaCompraCliente({
                                 type="number"
                                 min={0}
                                 step={0.01}
-                                value={preciosStr[item.producto_id] ?? item.precio_unitario}
-                                onChange={(e) => handlePrecioChange(item.producto_id, e.target.value)}
+                                value={preciosStr[item.lineId] ?? item.precio_unitario}
+                                onChange={(e) => handlePrecioChange(item.lineId, e.target.value)}
                                 className={`w-full text-sm border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 ${
                                   precioCambio
                                     ? 'border-amber-300 bg-amber-50 text-amber-800'
                                     : 'border-slate-200'
                                 }`}
-                                title="Precio de costo (editable)"
+                                title={item.presentacion_id ? 'Costo de esta presentación (editable)' : 'Precio de costo (editable)'}
                               />
                             </div>
 
@@ -584,6 +661,13 @@ export default function NuevaCompraCliente({
                               {ARS(item.precio_unitario * item.cantidad)}
                             </p>
                           </div>
+                          {/* Presentación: cuánto suma al stock base */}
+                          {item.presentacion_id && (
+                            <p className="text-xs text-violet-600 mt-1.5 flex items-center gap-1">
+                              <Package className="w-3 h-3 shrink-0" />
+                              Suma {item.cantidad * item.cantidad_base} {item.unidad} al stock
+                            </p>
+                          )}
                           {/* Aviso precio cambió respecto al catálogo */}
                           {precioCambio && (
                             <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
@@ -895,6 +979,68 @@ export default function NuevaCompraCliente({
                     : 'Confirmar sin actualizar'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Modal: Selector de presentación ═══════════════════════════════════ */}
+      {selectorProducto && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setSelectorProducto(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+              <Package className="w-5 h-5 text-violet-600" />
+              <div className="min-w-0">
+                <h2 className="font-semibold text-slate-900 truncate">¿Qué comprás?</h2>
+                <p className="text-xs text-slate-500 truncate">{selectorProducto.nombre}</p>
+              </div>
+            </div>
+
+            <div className="px-4 py-4 space-y-2 max-h-[60vh] overflow-y-auto">
+              {/* Opción base */}
+              <button
+                onClick={() => agregarAlCarrito(selectorProducto)}
+                className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800">Unidad ({selectorProducto.unidad})</p>
+                  <p className="text-xs text-slate-500">Suma 1 al stock por unidad</p>
+                </div>
+                <span className="text-sm font-bold text-slate-700 shrink-0">{ARS(selectorProducto.precio_costo)}</span>
+              </button>
+
+              {/* Presentaciones */}
+              {(selectorProducto.presentaciones ?? []).map((pres) => (
+                <button
+                  key={pres.id}
+                  onClick={() => agregarAlCarrito(selectorProducto, pres)}
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 hover:border-violet-400 hover:bg-violet-50 transition-colors text-left"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{pres.nombre}</p>
+                    <p className="text-xs text-slate-500">
+                      Suma {pres.cantidad_base} {selectorProducto.unidad} al stock
+                      {pres.codigo_barras && <span className="ml-1.5 text-slate-300">#{pres.codigo_barras}</span>}
+                    </p>
+                  </div>
+                  <span className="text-xs text-slate-400 shrink-0">costo a cargar</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setSelectorProducto(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
