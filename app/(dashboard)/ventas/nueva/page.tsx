@@ -35,7 +35,8 @@ export default async function NuevaVentaPage() {
             id, nombre, descripcion,
             precio_venta, stock_actual, stock_minimo,
             codigo_barras, unidad, permitir_venta_sin_stock,
-            es_favorito, categorias ( nombre )
+            es_favorito, categorias ( nombre ),
+            producto_presentaciones ( id, nombre, cantidad_base, precio_venta, codigo_barras, activo )
           `)
           .eq('activo', true)
           .in('categoria_id', catIds)
@@ -75,13 +76,32 @@ export default async function NuevaVentaPage() {
         id, nombre, descripcion,
         precio_venta, stock_actual, stock_minimo,
         codigo_barras, codigo_interno, unidad, tipo, permitir_venta_sin_stock,
-        es_favorito, orden_favorito, categorias ( nombre )
+        es_favorito, orden_favorito, categorias ( nombre ),
+        producto_presentaciones ( id, nombre, cantidad_base, precio_venta, codigo_barras, activo )
       `)
       .eq('activo', true)
       .eq('es_favorito', true)
       .order('orden_favorito', { nullsFirst: false })
       .order('nombre'),
   ])
+
+  // Normaliza el embed producto_presentaciones -> presentaciones (solo activas, ordenadas)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapPresentaciones = (rows: any[]) => (rows ?? []).map((r) => {
+    const presentaciones = (r.producto_presentaciones ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((x: any) => x.activo)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((x: any) => ({
+        id: x.id, nombre: x.nombre, cantidad_base: x.cantidad_base,
+        precio_venta: Number(x.precio_venta), codigo_barras: x.codigo_barras,
+      }))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .sort((a: any, b: any) => a.cantidad_base - b.cantidad_base)
+    const { producto_presentaciones, ...rest } = r
+    void producto_presentaciones
+    return { ...rest, presentaciones }
+  })
 
   const arqueoAbierto = (arqueoRes.data ?? null) as ArqueoCaja | null
   const metodosActivos: string[] =
@@ -116,7 +136,7 @@ export default async function NuevaVentaPage() {
   return (
     <PosCliente
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      servicios={(serviciosRes.data as any) ?? []}
+      servicios={mapPresentaciones((serviciosRes.data as any) ?? [])}
       metodosActivos={metodosActivos}
       esAdmin={esAdminUser}
       arqueoAbierto={arqueoAbierto}
@@ -131,7 +151,7 @@ export default async function NuevaVentaPage() {
       sonidoEscaneo={sonidoEscaneo}
       configTicket={(configTicketRes.data as ConfiguracionTicket | null)}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      favoritosIniciales={(favoritosRes.data as any) ?? []}
+      favoritosIniciales={mapPresentaciones((favoritosRes.data as any) ?? [])}
     />
   )
 }

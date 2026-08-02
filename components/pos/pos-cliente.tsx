@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronRight, FileText, Pencil,
 } from 'lucide-react'
 import { crearVenta, buscarProductosPOS, convertirVentaAFacturaX, actualizarPrecioProducto, guardarOrdenFavoritos } from '@/app/(dashboard)/ventas/nueva/actions'
-import type { ProductoPOS } from '@/app/(dashboard)/ventas/nueva/actions'
+import type { ProductoPOS, PresentacionPOS } from '@/app/(dashboard)/ventas/nueva/actions'
 import { obtenerVentaDetalle } from '@/app/(dashboard)/comprobantes/actions'
 import type { ConfiguracionTicket } from '@/lib/permisos'
 import { generarHTMLTicket } from '@/lib/ticket'
@@ -23,13 +23,21 @@ import { redondearPrecio } from '@/lib/utils'
 type Producto = ProductoPOS
 
 type CartItem = {
+  lineId: string                  // producto_id + presentacion_id (identidad de la línea)
   producto_id: string
+  presentacion_id: string | null
+  presentacion_nombre: string | null
+  cantidad_base: number           // 1 para la base; N para una presentación
   nombre: string
   precio_unitario: number
   precioOriginal: number          // precio del catálogo al agregar (para detectar edición admin)
   actualizarProducto: boolean     // checkbox: persistir el precio editado al producto
   unidad: string
   cantidad: number
+}
+
+function lineKey(productoId: string, presentacionId: string | null): string {
+  return `${productoId}::${presentacionId ?? 'base'}`
 }
 
 type VentaItemHoy = {
@@ -119,6 +127,8 @@ export default function PosCliente({
   const [cantServicio,   setCantServicio]   = useState<Record<string, number>>({})
   // Edición de precio en el carrito (solo admin)
   const [editandoPrecioId, setEditandoPrecioId] = useState<string | null>(null)
+  // Selector de presentación al agregar un producto que tiene presentaciones
+  const [selectorProducto, setSelectorProducto] = useState<Producto | null>(null)
   // Toggle del panel de favoritos: Productos | Servicios
   const [favTab, setFavTab] = useState<'producto' | 'servicio'>('producto')
   // Reordenar favoritos (solo admin)
@@ -182,12 +192,14 @@ export default function PosCliente({
     const resultados = await buscarProductosPOS(code)
     if (hiddenInputRef.current) hiddenInputRef.current.value = ''
     if (resultados.length > 0) {
-      const agregado = agregarAlCarrito(resultados[0])
+      const r = resultados[0]
+      // Escaneo: si el código matcheó una presentación, agregar esa; si no, la base directo.
+      const agregado = agregarAlCarrito(r, r.match_presentacion ?? null)
       if (agregado) {
         if (sonidoEscaneo) playBeep()
-        showToast('success', `Agregado: ${resultados[0].nombre}`)
+        showToast('success', `Agregado: ${r.match_presentacion ? `${r.nombre} · ${r.match_presentacion.nombre}` : r.nombre}`)
       } else {
-        showToast('error', `"${resultados[0].nombre}" sin stock`)
+        showToast('error', `"${r.nombre}" sin stock`)
       }
     } else {
       showToast('error', `Código "${code}" no encontrado`)
@@ -247,25 +259,44 @@ export default function PosCliente({
     setTimeout(() => setStockError(null), 3000)
   }
 
-  function agregarAlCarrito(p: Producto, cantidad = 1): boolean {
+  // Muestra el selector si el producto tiene presentaciones activas (agregado manual);
+  // si el resultado ya matcheó una presentación por código, agrega esa; si no, la base.
+  function pedirAgregar(p: Producto): boolean {
+    if (p.match_presentacion) return agregarAlCarrito(p, p.match_presentacion)
+    if (p.presentaciones && p.presentaciones.length > 0) {
+      setSelectorProducto(p)
+      return true
+    }
+    return agregarAlCarrito(p)
+  }
+
+  function agregarAlCarrito(p: Producto, presentacion: PresentacionPOS | null = null, cantidad = 1): boolean {
     if (p.stock_actual <= 0 && !p.permitir_venta_sin_stock) {
       mostrarStockError(`"${p.nombre}" no tiene stock disponible`)
       return false
     }
+    const key    = lineKey(p.id, presentacion?.id ?? null)
+    const precio  = presentacion ? presentacion.precio_venta : p.precio_venta
+    const nombre  = presentacion ? `${p.nombre} · ${presentacion.nombre}` : p.nombre
     setCart((prev) => {
-      const existing = prev.find((i) => i.producto_id === p.id)
-      const newItem = {
-        producto_id:        p.id,
-        nombre:             p.nombre,
-        precio_unitario:    p.precio_venta,
-        precioOriginal:     p.precio_venta,
-        actualizarProducto: false,
-        unidad:             p.unidad,
-        cantidad:           existing ? existing.cantidad + cantidad : cantidad,
+      const existing = prev.find((i) => i.lineId === key)
+      const newItem: CartItem = {
+        lineId:              key,
+        producto_id:         p.id,
+        presentacion_id:     presentacion?.id ?? null,
+        presentacion_nombre: presentacion?.nombre ?? null,
+        cantidad_base:       presentacion?.cantidad_base ?? 1,
+        nombre,
+        precio_unitario:     precio,
+        precioOriginal:      precio,
+        actualizarProducto:  false,
+        unidad:              p.unidad,
+        cantidad:            existing ? existing.cantidad + cantidad : cantidad,
       }
-      return [newItem, ...prev.filter((i) => i.producto_id !== p.id)]
+      return [newItem, ...prev.filter((i) => i.lineId !== key)]
     })
     lastAddedRef.current = Date.now()
+    setSelectorProducto(null)
     setBusqueda('')
     setResultadosBusqueda([])
     setBuscando(false)
@@ -276,28 +307,28 @@ export default function PosCliente({
 
   function incrementar(id: string) {
     setCart((prev) =>
-      prev.map((i) => (i.producto_id === id ? { ...i, cantidad: i.cantidad + 1 } : i))
+      prev.map((i) => (i.lineId === id ? { ...i, cantidad: i.cantidad + 1 } : i))
     )
   }
 
   function decrementar(id: string) {
     setCart((prev) => {
-      const item = prev.find((i) => i.producto_id === id)
+      const item = prev.find((i) => i.lineId === id)
       if (!item) return prev
-      if (item.cantidad <= 1) return prev.filter((i) => i.producto_id !== id)
-      return prev.map((i) => (i.producto_id === id ? { ...i, cantidad: i.cantidad - 1 } : i))
+      if (item.cantidad <= 1) return prev.filter((i) => i.lineId !== id)
+      return prev.map((i) => (i.lineId === id ? { ...i, cantidad: i.cantidad - 1 } : i))
     })
   }
 
   function setCantidad(id: string, v: number) {
     if (isNaN(v) || v < 1) return
     setCart((prev) =>
-      prev.map((i) => (i.producto_id === id ? { ...i, cantidad: v } : i))
+      prev.map((i) => (i.lineId === id ? { ...i, cantidad: v } : i))
     )
   }
 
   function eliminar(id: string) {
-    setCart((prev) => prev.filter((i) => i.producto_id !== id))
+    setCart((prev) => prev.filter((i) => i.lineId !== id))
   }
 
   function vaciarCarrito() {
@@ -310,7 +341,7 @@ export default function PosCliente({
   function editarPrecio(id: string, valor: number) {
     if (!esAdmin) return
     setCart((prev) => prev.map((i) =>
-      i.producto_id === id
+      i.lineId === id
         ? { ...i, precio_unitario: Number.isFinite(valor) && valor >= 0 ? valor : i.precio_unitario }
         : i
     ))
@@ -318,14 +349,14 @@ export default function PosCliente({
 
   function confirmarPrecio(id: string) {
     setCart((prev) => prev.map((i) =>
-      i.producto_id === id ? { ...i, precio_unitario: redondearPrecio(i.precio_unitario) } : i
+      i.lineId === id ? { ...i, precio_unitario: redondearPrecio(i.precio_unitario) } : i
     ))
     setEditandoPrecioId(null)
   }
 
   function toggleActualizarProducto(id: string) {
     setCart((prev) => prev.map((i) =>
-      i.producto_id === id ? { ...i, actualizarProducto: !i.actualizarProducto } : i
+      i.lineId === id ? { ...i, actualizarProducto: !i.actualizarProducto } : i
     ))
   }
 
@@ -405,16 +436,19 @@ export default function PosCliente({
       const wasScanner = isScannerRef.current
       if (wasScanner && sonidoEscaneo) playBeep()
       isScannerRef.current = false
-      const agregado = agregarAlCarrito(resultadosBusqueda[0])
+      const r = resultadosBusqueda[0]
+      // Escaneo: agrega la presentación matcheada o la base. Enter manual: abre selector si corresponde.
+      const agregado = wasScanner ? agregarAlCarrito(r, r.match_presentacion ?? null) : pedirAgregar(r)
       if (wasScanner) {
-        if (agregado) showToast('success', `Agregado: ${resultadosBusqueda[0].nombre}`)
-        else          showToast('error',   `"${resultadosBusqueda[0].nombre}" sin stock`)
+        if (agregado) showToast('success', `Agregado: ${r.match_presentacion ? `${r.nombre} · ${r.match_presentacion.nombre}` : r.nombre}`)
+        else          showToast('error',   `"${r.nombre}" sin stock`)
       }
       return
     }
 
     // El scanner disparó Enter antes de que llegara el debounce — buscar inmediatamente
     if (isScannerRef.current || buscando) {
+      const wasScanner = isScannerRef.current
       if (debounceSearchRef.current) clearTimeout(debounceSearchRef.current)
       const version = ++searchVersionRef.current
       isScannerRef.current = false
@@ -425,9 +459,12 @@ export default function PosCliente({
       setBuscando(false)
       if (resultados.length > 0) {
         if (sonidoEscaneo) playBeep()
-        const agregado = agregarAlCarrito(resultados[0])
-        if (agregado) showToast('success', `Agregado: ${resultados[0].nombre}`)
-        else          showToast('error',   `"${resultados[0].nombre}" sin stock`)
+        const r = resultados[0]
+        const agregado = wasScanner ? agregarAlCarrito(r, r.match_presentacion ?? null) : pedirAgregar(r)
+        if (wasScanner) {
+          if (agregado) showToast('success', `Agregado: ${r.match_presentacion ? `${r.nombre} · ${r.match_presentacion.nombre}` : r.nombre}`)
+          else          showToast('error',   `"${r.nombre}" sin stock`)
+        }
       } else {
         mostrarStockError(`Código "${busqueda}" no encontrado`)
         showToast('error', `Código "${busqueda}" no encontrado`)
@@ -448,7 +485,7 @@ export default function PosCliente({
     setCantServicio((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) - 1) }))
   }
   function agregarServicio(p: Producto) {
-    agregarAlCarrito(p, getCantS(p.id))
+    agregarAlCarrito(p, null, getCantS(p.id))
     setCantServicio((prev) => ({ ...prev, [p.id]: 1 }))
   }
 
@@ -466,6 +503,7 @@ export default function PosCliente({
     const result = await crearVenta({
       items: cart.map((i) => ({
         producto_id:     i.producto_id,
+        presentacion_id: i.presentacion_id,
         cantidad:        i.cantidad,
         precio_unitario: i.precio_unitario,
       })),
@@ -480,8 +518,9 @@ export default function PosCliente({
     }
 
     // Admin: persistir al producto los precios editados que marcó con el checkbox
+    // (solo líneas de producto base; las presentaciones no tienen ese checkbox en esta fase)
     if (esAdmin) {
-      const aActualizar = cart.filter((i) => i.actualizarProducto && i.precio_unitario !== i.precioOriginal)
+      const aActualizar = cart.filter((i) => !i.presentacion_id && i.actualizarProducto && i.precio_unitario !== i.precioOriginal)
       for (const i of aActualizar) {
         await actualizarPrecioProducto(i.producto_id, i.precio_unitario)
       }
@@ -503,7 +542,7 @@ export default function PosCliente({
       total,
       metodo_pago:  metodoPago,
       venta_items:  cart.map(item => ({
-        id:              `${item.producto_id}-${Date.now()}`,
+        id:              `${item.lineId}-${Date.now()}`,
         cantidad:        item.cantidad,
         precio_unitario: item.precio_unitario,
         subtotal:        item.cantidad * item.precio_unitario,
@@ -649,7 +688,7 @@ export default function PosCliente({
                       {resultadosBusqueda.map((p) => (
                         <li key={p.id}>
                           <button
-                            onMouseDown={(e) => { e.preventDefault(); agregarAlCarrito(p) }}
+                            onMouseDown={(e) => { e.preventDefault(); pedirAgregar(p) }}
                             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 active:bg-blue-100 transition-colors text-left"
                           >
                             <div className="flex-1 min-w-0">
@@ -739,7 +778,7 @@ export default function PosCliente({
                         onDragOver={editandoFavoritos ? (e) => e.preventDefault() : undefined}
                         onDrop={editandoFavoritos ? () => { if (dragFavIndex !== null) reordenarFavoritos(dragFavIndex, idx); setDragFavIndex(null) } : undefined}
                         onDragEnd={editandoFavoritos ? () => setDragFavIndex(null) : undefined}
-                        onMouseDown={editandoFavoritos ? undefined : (e) => { e.preventDefault(); agregarAlCarrito(p) }}
+                        onMouseDown={editandoFavoritos ? undefined : (e) => { e.preventDefault(); pedirAgregar(p) }}
                         title={p.nombre}
                         className={`min-h-[56px] px-3 py-2 rounded-xl border bg-white text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
                           editandoFavoritos
@@ -882,22 +921,27 @@ export default function PosCliente({
                 ) : (
                   <ul className="divide-y divide-slate-100 px-4 py-1">
                     {cart.map((item) => (
-                      <li key={item.producto_id} className="py-3 flex items-center gap-3">
+                      <li key={item.lineId} className="py-3 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-slate-800 text-sm truncate">{item.nombre}</p>
+                          {item.presentacion_id && (
+                            <p className="text-[10px] text-slate-400 -mt-0.5">
+                              descuenta {item.cantidad * item.cantidad_base} u. de stock
+                            </p>
+                          )}
                           {esAdmin ? (
-                            editandoPrecioId === item.producto_id ? (
+                            editandoPrecioId === item.lineId ? (
                               <input
                                 type="number" min={0} step="1" autoFocus
                                 defaultValue={item.precio_unitario}
-                                onChange={(e) => editarPrecio(item.producto_id, parseFloat(e.target.value))}
-                                onBlur={() => confirmarPrecio(item.producto_id)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') confirmarPrecio(item.producto_id) }}
+                                onChange={(e) => editarPrecio(item.lineId, parseFloat(e.target.value))}
+                                onBlur={() => confirmarPrecio(item.lineId)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') confirmarPrecio(item.lineId) }}
                                 className="w-24 text-xs border border-blue-300 rounded px-1.5 py-0.5 mt-0.5 text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
                               />
                             ) : (
                               <button
-                                onClick={() => setEditandoPrecioId(item.producto_id)}
+                                onClick={() => setEditandoPrecioId(item.lineId)}
                                 title="Editar precio"
                                 className="text-xs text-slate-600 mt-0.5 hover:text-blue-600 inline-flex items-center gap-1 transition-colors"
                               >
@@ -910,12 +954,12 @@ export default function PosCliente({
                               {ARS(item.precio_unitario)} / {item.unidad}
                             </p>
                           )}
-                          {esAdmin && item.precio_unitario !== item.precioOriginal && (
+                          {esAdmin && !item.presentacion_id && item.precio_unitario !== item.precioOriginal && (
                             <label className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 cursor-pointer">
                               <input
                                 type="checkbox"
                                 checked={item.actualizarProducto}
-                                onChange={() => toggleActualizarProducto(item.producto_id)}
+                                onChange={() => toggleActualizarProducto(item.lineId)}
                                 className="w-3 h-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
                               Actualizar precio del producto para futuras ventas
@@ -924,7 +968,7 @@ export default function PosCliente({
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
-                            onClick={() => decrementar(item.producto_id)}
+                            onClick={() => decrementar(item.lineId)}
                             className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
                           >
                             <Minus className="w-3 h-3 text-slate-600" />
@@ -933,11 +977,11 @@ export default function PosCliente({
                             type="number"
                             min={1}
                             value={item.cantidad}
-                            onChange={(e) => setCantidad(item.producto_id, parseInt(e.target.value))}
+                            onChange={(e) => setCantidad(item.lineId, parseInt(e.target.value))}
                             className="w-11 text-center text-sm font-bold text-slate-900 border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
                           <button
-                            onClick={() => incrementar(item.producto_id)}
+                            onClick={() => incrementar(item.lineId)}
                             className="w-7 h-7 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-colors"
                           >
                             <Plus className="w-3 h-3" />
@@ -947,7 +991,7 @@ export default function PosCliente({
                           {ARS(item.precio_unitario * item.cantidad)}
                         </p>
                         <button
-                          onClick={() => eliminar(item.producto_id)}
+                          onClick={() => eliminar(item.lineId)}
                           className="text-slate-300 hover:text-red-500 transition-colors shrink-0"
                         >
                           <X className="w-4 h-4" />
@@ -1041,6 +1085,47 @@ export default function PosCliente({
           onImprimir={printTicket}
           onCerrar={nuevaVenta}
         />
+      )}
+
+      {/* Selector de presentación al agregar un producto con presentaciones */}
+      {selectorProducto && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setSelectorProducto(null) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-slate-900">¿Qué presentación?</h3>
+                <p className="text-xs text-slate-500 truncate">{selectorProducto.nombre}</p>
+              </div>
+              <button onClick={() => setSelectorProducto(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-3 space-y-2">
+              {/* Base (unidad) */}
+              <button
+                onClick={() => agregarAlCarrito(selectorProducto, null)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+              >
+                <span className="font-medium text-slate-800 text-sm">{selectorProducto.unidad} (base)</span>
+                <span className="text-sm font-bold text-slate-700">{ARS(selectorProducto.precio_venta)}</span>
+              </button>
+              {(selectorProducto.presentaciones ?? []).map((pres) => (
+                <button
+                  key={pres.id}
+                  onClick={() => agregarAlCarrito(selectorProducto, pres)}
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+                >
+                  <span className="min-w-0">
+                    <span className="block font-medium text-slate-800 text-sm truncate">{pres.nombre}</span>
+                    <span className="block text-xs text-slate-400">descuenta {pres.cantidad_base} u. de stock</span>
+                  </span>
+                  <span className="text-sm font-bold text-slate-700 shrink-0">{ARS(pres.precio_venta)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toasts de feedback del scanner */}

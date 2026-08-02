@@ -7,6 +7,14 @@ import type { Perfil } from '@/lib/permisos'
 import { redondearPrecio } from '@/lib/utils'
 import type { TipoComprobante, DatosCliente } from '@/lib/ticket'
 
+export type PresentacionPOS = {
+  id: string
+  nombre: string
+  cantidad_base: number
+  precio_venta: number
+  codigo_barras: string | null
+}
+
 export type ProductoPOS = {
   id: string
   nombre: string
@@ -22,6 +30,32 @@ export type ProductoPOS = {
   tipo?: 'producto' | 'servicio'
   orden_favorito?: number | null
   categorias: { nombre: string } | null
+  presentaciones?: PresentacionPOS[]           // presentaciones activas del producto
+  match_presentacion?: PresentacionPOS | null  // seteado si el código escaneado matcheó esta presentación
+}
+
+const CAMPOS_PRODUCTO_POS = `
+  id, nombre, descripcion,
+  precio_venta, stock_actual, stock_minimo,
+  codigo_barras, codigo_interno, unidad, permitir_venta_sin_stock,
+  es_favorito, categorias ( nombre ),
+  producto_presentaciones ( id, nombre, cantidad_base, precio_venta, codigo_barras, activo )
+`
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapProductoPOS(row: any): ProductoPOS {
+  const presentaciones: PresentacionPOS[] = (row.producto_presentaciones ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((x: any) => x.activo)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((x: any) => ({
+      id: x.id, nombre: x.nombre, cantidad_base: x.cantidad_base,
+      precio_venta: Number(x.precio_venta), codigo_barras: x.codigo_barras,
+    }))
+    .sort((a: PresentacionPOS, b: PresentacionPOS) => a.cantidad_base - b.cantidad_base)
+  const { producto_presentaciones, ...rest } = row
+  void producto_presentaciones
+  return { ...rest, presentaciones }
 }
 
 export async function buscarProductosPOS(q: string): Promise<ProductoPOS[]> {
@@ -31,27 +65,48 @@ export async function buscarProductosPOS(q: string): Promise<ProductoPOS[]> {
   const trimmed = q.trim()
   if (!trimmed) return []
 
+  // 1. Match exacto por código de barras de una PRESENTACIÓN activa
+  const { data: presRows } = await supabase
+    .from('producto_presentaciones')
+    .select(`id, nombre, cantidad_base, precio_venta, codigo_barras, productos!inner ( ${CAMPOS_PRODUCTO_POS} )`)
+    .eq('codigo_barras', trimmed)
+    .eq('activo', true)
+    .limit(5)
+
+  const resultadosPres: ProductoPOS[] = (presRows ?? []).map((row) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const base = mapProductoPOS((row as any).productos)
+    return {
+      ...base,
+      match_presentacion: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        id: (row as any).id, nombre: (row as any).nombre, cantidad_base: (row as any).cantidad_base,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        precio_venta: Number((row as any).precio_venta), codigo_barras: (row as any).codigo_barras,
+      },
+    }
+  })
+
+  // 2. Búsqueda normal de productos (nombre / código de barras / código interno)
   const { data } = await supabase
     .from('productos')
-    .select(`
-      id, nombre, descripcion,
-      precio_venta, stock_actual, stock_minimo,
-      codigo_barras, codigo_interno, unidad, permitir_venta_sin_stock,
-      es_favorito, categorias ( nombre )
-    `)
+    .select(CAMPOS_PRODUCTO_POS)
     .eq('activo', true)
     .or(`nombre.ilike.%${trimmed}%,codigo_barras.eq.${trimmed},codigo_interno.ilike.%${trimmed}%`)
     .order('nombre')
     .limit(40)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data as any) ?? []
+  const resultadosProd: ProductoPOS[] = (data ?? []).map(mapProductoPOS)
+
+  // Las presentaciones matcheadas por código van primero (para el escaneo)
+  return [...resultadosPres, ...resultadosProd]
 }
 
 type ItemVenta = {
   producto_id: string
   cantidad: number
   precio_unitario: number
+  presentacion_id?: string | null
 }
 
 type MetodoPago = 'efectivo' | 'transferencia' | 'debito' | 'credito'
@@ -109,16 +164,52 @@ export async function crearVenta(payload: {
     }
   }
 
+  // Resolver presentaciones (precio y validación de pertenencia)
+  const presentacionIds = Array.from(new Set(
+    payload.items.map((i) => i.presentacion_id).filter((x): x is string => !!x)
+  ))
+  const presMap = new Map<string, { producto_id: string; precio_venta: number; activo: boolean }>()
+  if (presentacionIds.length > 0) {
+    const { data: presDB, error: presError } = await supabase
+      .from('producto_presentaciones')
+      .select('id, producto_id, precio_venta, activo')
+      .eq('negocio_id', negocioId)
+      .in('id', presentacionIds)
+    if (presError) return { error: presError.message }
+    for (const p of presDB ?? []) {
+      presMap.set(p.id, { producto_id: p.producto_id, precio_venta: Number(p.precio_venta), activo: p.activo })
+    }
+  }
+
+  // Validar cada presentación: existe, activa, y pertenece al producto del ítem (regla 5)
+  for (const item of payload.items) {
+    if (!item.presentacion_id) continue
+    const pr = presMap.get(item.presentacion_id)
+    if (!pr)               return { error: 'Una presentación no existe o no pertenece a este negocio.' }
+    if (!pr.activo)        return { error: 'Una presentación seleccionada está inactiva.' }
+    if (pr.producto_id !== item.producto_id) {
+      return { error: 'Una presentación no corresponde a su producto.' }
+    }
+  }
+
   // Admin: puede fijar un precio manual para ESTA venta.
   // Cajero/otros: siempre el precio del catálogo (anti-fraude, ignora el cliente).
+  // El "catálogo" es el precio de la presentación si hay presentacion_id, si no el del producto.
   const admin = esAdmin(perfilData as Perfil | null)
   const itemsConPrecio = payload.items.map((item) => {
-    const precioCatalogo = precioMap.get(item.producto_id)!
+    const precioCatalogo = item.presentacion_id
+      ? presMap.get(item.presentacion_id)!.precio_venta
+      : precioMap.get(item.producto_id)!
     const precio =
       admin && Number.isFinite(item.precio_unitario) && item.precio_unitario >= 0
         ? redondearPrecio(item.precio_unitario)
         : precioCatalogo
-    return { producto_id: item.producto_id, cantidad: item.cantidad, precio_unitario: precio }
+    return {
+      producto_id:     item.producto_id,
+      presentacion_id: item.presentacion_id ?? null,
+      cantidad:        item.cantidad,
+      precio_unitario: precio,
+    }
   })
 
   // Calcular total en el servidor con los precios reales
@@ -164,6 +255,7 @@ export async function crearVenta(payload: {
     itemsConPrecio.map((item) => ({
       venta_id:        venta.id,
       producto_id:     item.producto_id,
+      presentacion_id: item.presentacion_id,
       cantidad:        item.cantidad,
       precio_unitario: item.precio_unitario,
       // subtotal es columna GENERATED — no se incluye
