@@ -6,8 +6,10 @@ import { ArrowLeft, Search, Plus, Trash2, Printer, Tag } from 'lucide-react'
 import {
   buscarProductosParaEtiquetas,
   guardarCodigoGenerado,
+  guardarNombreEtiqueta,
   type ProductoEtiqueta,
 } from '@/app/(dashboard)/productos/etiquetas/actions'
+import { getTextoEtiqueta, fontSizeEtiqueta, LIMITE_ETIQUETA } from '@/lib/etiquetas'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,17 @@ type ItemEtiqueta = {
   cantidad:  number
   codigoEfectivo: string  // codigo_barras | codigo_interno | generado
   generado:  boolean      // true si fue generado (hay que guardarlo)
+  texto:     string       // texto que va debajo del código (editable por tanda)
+}
+
+// Texto de etiqueta por defecto para un resultado de búsqueda.
+function textoDefault(p: ProductoEtiqueta): string {
+  return getTextoEtiqueta(
+    { nombre: p.nombre, nombre_etiqueta: p.nombre_etiqueta },
+    p.tipo === 'presentacion'
+      ? { nombre: p.presentacion_nombre, cantidad_base: p.presentacion_cantidad_base }
+      : null
+  )
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -71,9 +84,9 @@ function BarcodeLabel({ item }: { item: ItemEtiqueta }) {
       <svg ref={svgRef} className="w-full" />
       <p
         className="text-center font-semibold leading-tight mt-0.5"
-        style={{ fontSize: '8pt', maxWidth: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+        style={{ fontSize: `${fontSizeEtiqueta(item.texto, 8, 6)}pt`, maxWidth: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
       >
-        {item.producto.nombre}
+        {item.texto}
       </p>
       <p className="font-bold mt-0.5" style={{ fontSize: '9pt' }}>
         {ARS(item.producto.precio_venta)}
@@ -95,6 +108,8 @@ export default function EtiquetasCliente() {
 
   // Sección 2 — Lista
   const [lista, setLista] = useState<ItemEtiqueta[]>([])
+  // Ítems (por producto.id) marcados para guardar su texto como predeterminado
+  const [guardarPred, setGuardarPred] = useState<Set<string>>(new Set())
 
   // Sección 3 — Preview
   const [preview,    setPreview]    = useState(false)
@@ -139,7 +154,7 @@ export default function EtiquetasCliente() {
 
     const items: ItemEtiqueta[] = nuevos.map(p => {
       const { codigo, generado } = resolverCodigo(p)
-      return { producto: p, cantidad: 1, codigoEfectivo: codigo, generado }
+      return { producto: p, cantidad: 1, codigoEfectivo: codigo, generado, texto: textoDefault(p) }
     })
 
     setLista(prev => [...prev, ...items])
@@ -158,7 +173,23 @@ export default function EtiquetasCliente() {
 
   function eliminarDeLista(id: string) {
     setLista(prev => prev.filter(i => i.producto.id !== id))
+    setGuardarPred(prev => { const n = new Set(prev); n.delete(id); return n })
     setPreview(false)
+  }
+
+  // ─── Editar el texto de la etiqueta (solo esta tanda) ───────────────────────
+
+  function setTextoItem(id: string, valor: string) {
+    setLista(prev => prev.map(i => i.producto.id === id ? { ...i, texto: valor } : i))
+    setPreview(false)
+  }
+
+  function toggleGuardarPred(id: string) {
+    setGuardarPred(prev => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id); else n.add(id)
+      return n
+    })
   }
 
   // ─── Generar etiquetas ──────────────────────────────────────────────────────
@@ -173,6 +204,17 @@ export default function EtiquetasCliente() {
       const { error } = await guardarCodigoGenerado(item.producto.id, item.codigoEfectivo, item.producto.tipo)
       if (error) {
         setErrorGuard(`Error al guardar código de ${item.producto.nombre}: ${error}`)
+        setGuardando(false)
+        return
+      }
+    }
+
+    // Guardar nombres de etiqueta marcados como predeterminados (solo líneas base)
+    const aGuardar = lista.filter(i => i.producto.tipo === 'producto' && guardarPred.has(i.producto.id))
+    for (const item of aGuardar) {
+      const { error } = await guardarNombreEtiqueta(item.producto.producto_id, item.texto)
+      if (error) {
+        setErrorGuard(`Error al guardar nombre de etiqueta de ${item.producto.nombre}: ${error}`)
         setGuardando(false)
         return
       }
@@ -201,9 +243,10 @@ export default function EtiquetasCliente() {
           fontSize: 9, textMargin: 2, height: 38, margin: 4, width: 1.4,
         })
       } catch { /* código inválido — etiqueta sin barras */ }
+      const fs = fontSizeEtiqueta(item.texto, 7.5, 5.5)
       return `<div class="label">
         ${svg.outerHTML}
-        <p class="nombre">${item.producto.nombre}</p>
+        <p class="nombre" style="font-size:${fs}pt">${item.texto}</p>
         <p class="precio">$${item.producto.precio_venta.toLocaleString('es-AR')}</p>
       </div>`
     }).join('')
@@ -301,7 +344,7 @@ body{font-family:Arial,sans-serif}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
-                            <span className="truncate">{p.nombre}</span>
+                            <span className="truncate">{textoDefault(p)}</span>
                             {p.tipo === 'presentacion' && (
                               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
                                 presentación
@@ -346,43 +389,85 @@ body{font-family:Arial,sans-serif}
               </div>
             ) : (
               <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-                {lista.map(item => (
-                  <div key={item.producto.id} className="flex items-center gap-3 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
-                        <span className="truncate">{item.producto.nombre}</span>
-                        {item.producto.tipo === 'presentacion' && (
-                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
-                            presentación
+                {lista.map(item => {
+                  const largo    = item.texto.trim().length
+                  const excede   = largo > LIMITE_ETIQUETA
+                  const esBase   = item.producto.tipo === 'producto'
+                  return (
+                  <div key={item.producto.id} className="py-3 space-y-2">
+                    {/* Fila 1: texto editable + cantidad + borrar */}
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={item.texto}
+                            onChange={e => setTextoItem(item.producto.id, e.target.value)}
+                            placeholder="Texto de la etiqueta"
+                            className={`flex-1 min-w-0 px-2 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${excede ? 'border-amber-300 bg-amber-50' : 'border-slate-200'}`}
+                          />
+                          {!esBase && (
+                            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                              presentación
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mt-1">
+                          <p className="text-xs text-slate-500 truncate">
+                            {item.codigoEfectivo}
+                            {item.generado && (
+                              <span className="ml-1 text-amber-600 font-medium">(generado)</span>
+                            )}
+                          </p>
+                          <span className={`text-[11px] shrink-0 ${excede ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
+                            {largo}/{LIMITE_ETIQUETA}
                           </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {item.codigoEfectivo}
-                        {item.generado && (
-                          <span className="ml-1 text-amber-600 font-medium">(generado)</span>
-                        )}
-                      </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <label className="text-xs text-slate-500 mr-1">Cant.</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={item.cantidad}
+                          onChange={e => setCantidad(item.producto.id, Number(e.target.value))}
+                          className="w-14 px-2 py-1 text-sm text-center border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <button
+                        onClick={() => eliminarDeLista(item.producto.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <label className="text-xs text-slate-500 mr-1">Cant.</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={item.cantidad}
-                        onChange={e => setCantidad(item.producto.id, Number(e.target.value))}
-                        className="w-14 px-2 py-1 text-sm text-center border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <button
-                      onClick={() => eliminarDeLista(item.producto.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    {/* Fila 2: guardar predeterminado (solo producto base) */}
+                    {esBase ? (
+                      <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer w-fit">
+                        <input
+                          type="checkbox"
+                          checked={guardarPred.has(item.producto.id)}
+                          onChange={() => toggleGuardarPred(item.producto.id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Guardar como nombre de etiqueta predeterminado
+                      </label>
+                    ) : (
+                      <p className="text-[11px] text-slate-400">
+                        Para fijar el nombre corto, editá el producto base o su presentación.
+                      </p>
+                    )}
+
+                    {excede && (
+                      <p className="text-[11px] text-amber-600">
+                        Texto largo: al imprimir se achica la fuente para que entre (no se corta con “…”).
+                      </p>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
@@ -401,7 +486,7 @@ body{font-family:Arial,sans-serif}
                   disabled={guardando}
                   className="w-full px-4 py-2.5 text-sm font-semibold bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-lg transition-colors"
                 >
-                  {guardando ? 'Guardando códigos...' : 'Generar etiquetas para imprimir'}
+                  {guardando ? 'Guardando...' : 'Generar etiquetas para imprimir'}
                 </button>
               </div>
             )}

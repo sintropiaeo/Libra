@@ -35,7 +35,7 @@ export default async function ProductosPage({
   let query = supabase
     .from('productos')
     .select(`
-      id, nombre, descripcion,
+      id, nombre, nombre_etiqueta, descripcion,
       categoria_id, precio_costo, precio_venta,
       stock_actual, stock_minimo,
       codigo_barras, codigo_interno, unidad, tipo, activo, permitir_venta_sin_stock,

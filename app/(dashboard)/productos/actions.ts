@@ -36,6 +36,7 @@ export async function crearProducto(formData: FormData): Promise<ActionResult> {
 
   const { error } = await supabase.from('productos').insert({
     nombre:                   (formData.get('nombre') as string).trim(),
+    nombre_etiqueta:          (formData.get('nombre_etiqueta') as string)?.trim() || null,
     descripcion:              (formData.get('descripcion') as string)?.trim() || null,
     categoria_id:             (formData.get('categoria_id') as string) || null,
     precio_costo:             Number(formData.get('precio_costo')),
@@ -67,6 +68,7 @@ export async function actualizarProducto(
     .from('productos')
     .update({
       nombre:                   (formData.get('nombre') as string).trim(),
+      nombre_etiqueta:          (formData.get('nombre_etiqueta') as string)?.trim() || null,
       descripcion:              (formData.get('descripcion') as string)?.trim() || null,
       categoria_id:             (formData.get('categoria_id') as string) || null,
       precio_costo:             Number(formData.get('precio_costo')),

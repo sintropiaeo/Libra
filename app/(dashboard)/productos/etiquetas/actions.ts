@@ -7,11 +7,15 @@ import type { Perfil } from '@/lib/permisos'
 
 export type ProductoEtiqueta = {
   tipo:           'producto' | 'presentacion'
-  id:             string
-  nombre:         string
+  id:             string          // id de la fila seleccionada (producto o presentación)
+  producto_id:    string          // id del producto BASE (para guardar nombre_etiqueta)
+  nombre:         string          // nombre REAL del producto base (nunca se muestra crudo si hay nombre_etiqueta)
+  nombre_etiqueta: string | null  // nombre corto opcional para la etiqueta
   precio_venta:   number
   codigo_barras:  string | null
   codigo_interno: string | null
+  presentacion_nombre:        string | null
+  presentacion_cantidad_base: number | null
 }
 
 async function verificarEditor() {
@@ -34,10 +38,13 @@ export async function buscarProductosParaEtiquetas(
   const trimmed = q.trim()
   if (!trimmed) return []
 
+  const PRES_SELECT =
+    'id, nombre, cantidad_base, precio_venta, codigo_barras, productos!inner ( id, nombre, nombre_etiqueta, activo )'
+
   const [prodRes, presPorNombreRes, presPorCodigoRes] = await Promise.all([
     supabase
       .from('productos')
-      .select('id, nombre, precio_venta, codigo_barras, codigo_interno')
+      .select('id, nombre, nombre_etiqueta, precio_venta, codigo_barras, codigo_interno')
       .or(`nombre.ilike.%${trimmed}%,codigo_barras.ilike.%${trimmed}%,codigo_interno.ilike.%${trimmed}%`)
       .eq('activo', true)
       .order('nombre')
@@ -45,7 +52,7 @@ export async function buscarProductosParaEtiquetas(
     // Presentaciones cuyo producto padre matchea por nombre
     supabase
       .from('producto_presentaciones')
-      .select('id, nombre, precio_venta, codigo_barras, productos!inner ( nombre, activo )')
+      .select(PRES_SELECT)
       .eq('activo', true)
       .eq('productos.activo', true)
       .ilike('productos.nombre', `%${trimmed}%`)
@@ -53,7 +60,7 @@ export async function buscarProductosParaEtiquetas(
     // Presentaciones que matchean por su propio nombre o código
     supabase
       .from('producto_presentaciones')
-      .select('id, nombre, precio_venta, codigo_barras, productos!inner ( nombre, activo )')
+      .select(PRES_SELECT)
       .eq('activo', true)
       .eq('productos.activo', true)
       .or(`nombre.ilike.%${trimmed}%,codigo_barras.ilike.%${trimmed}%`)
@@ -61,7 +68,16 @@ export async function buscarProductosParaEtiquetas(
   ])
 
   const productos: ProductoEtiqueta[] = (prodRes.data ?? []).map((p) => ({
-    tipo: 'producto' as const, ...p,
+    tipo:                       'producto' as const,
+    id:                         p.id,
+    producto_id:                p.id,
+    nombre:                     p.nombre,
+    nombre_etiqueta:            p.nombre_etiqueta ?? null,
+    precio_venta:               Number(p.precio_venta),
+    codigo_barras:              p.codigo_barras,
+    codigo_interno:             p.codigo_interno,
+    presentacion_nombre:        null,
+    presentacion_cantidad_base: null,
   }))
 
   // Dedup de presentaciones por id (pueden venir en ambas consultas)
@@ -69,14 +85,18 @@ export async function buscarProductosParaEtiquetas(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const row of [...(presPorNombreRes.data ?? []), ...(presPorCodigoRes.data ?? [])] as any[]) {
     if (presMap.has(row.id)) continue
-    const prodNombre = row.productos?.nombre ?? ''
+    const prod = row.productos ?? {}
     presMap.set(row.id, {
-      tipo:           'presentacion',
-      id:             row.id,
-      nombre:         `${prodNombre} · ${row.nombre}`,
-      precio_venta:   Number(row.precio_venta),
-      codigo_barras:  row.codigo_barras,
-      codigo_interno: null,
+      tipo:                       'presentacion',
+      id:                         row.id,
+      producto_id:                prod.id,
+      nombre:                     prod.nombre ?? '',
+      nombre_etiqueta:            prod.nombre_etiqueta ?? null,
+      precio_venta:               Number(row.precio_venta),
+      codigo_barras:              row.codigo_barras,
+      codigo_interno:             null,
+      presentacion_nombre:        row.nombre,
+      presentacion_cantidad_base: row.cantidad_base,
     })
   }
 
@@ -114,6 +134,28 @@ export async function guardarCodigoGenerado(
     .from('productos')
     .update({ codigo_interno: codigo })
     .eq('id', id)
+    .eq('negocio_id', negocioId)
+
+  if (error) return { error: error.message }
+  revalidatePath('/productos')
+  return {}
+}
+
+// Guarda el nombre corto de etiqueta como predeterminado del producto.
+// negocio_id se verifica server-side (nunca se confía en el cliente).
+export async function guardarNombreEtiqueta(
+  productoId: string,
+  nombreEtiqueta: string
+): Promise<{ error?: string }> {
+  const ctx = await verificarEditor()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
+
+  const valor = nombreEtiqueta.trim()
+  const { error } = await supabase
+    .from('productos')
+    .update({ nombre_etiqueta: valor || null })
+    .eq('id', productoId)
     .eq('negocio_id', negocioId)
 
   if (error) return { error: error.message }

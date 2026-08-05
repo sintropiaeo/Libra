@@ -17,6 +17,7 @@ import {
   eliminarProducto,
 } from '@/app/(dashboard)/productos/actions'
 import { redondearPrecio } from '@/lib/utils'
+import { LIMITE_ETIQUETA } from '@/lib/etiquetas'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import ImportarModal from '@/components/productos/importar-modal'
 import PresentacionesModal from '@/components/productos/presentaciones-modal'
@@ -28,6 +29,7 @@ type Categoria = { id: string; nombre: string }
 type Producto = {
   id: string
   nombre: string
+  nombre_etiqueta: string | null
   descripcion: string | null
   categoria_id: string | null
   precio_costo: number
@@ -48,6 +50,7 @@ type Producto = {
 
 type FormValues = {
   nombre: string
+  nombre_etiqueta: string
   descripcion: string
   categoria_id: string
   precio_costo: string
@@ -72,6 +75,7 @@ const UNIDADES = [
 
 const FORM_VACIO: FormValues = {
   nombre:                   '',
+  nombre_etiqueta:          '',
   descripcion:              '',
   categoria_id:             '',
   precio_costo:             '',
@@ -271,6 +275,7 @@ export default function ProductosCliente({
     setProductoEditando(p)
     setForm({
       nombre:                   p.nombre,
+      nombre_etiqueta:          p.nombre_etiqueta ?? '',
       descripcion:              p.descripcion   ?? '',
       categoria_id:             p.categoria_id  ?? '',
       precio_costo:             String(p.precio_costo),
@@ -684,6 +689,23 @@ export default function ProductosCliente({
                     onChange={(e) => setForm({ ...form, nombre: e.target.value })}
                     className={input}
                   />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Se usa para matchear el Excel del proveedor — no lo acortes.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="p-nombre-etiqueta" className={label}>Nombre para etiqueta</label>
+                  <input
+                    id="p-nombre-etiqueta" name="p-nombre-etiqueta" type="text"
+                    placeholder="Opcional — versión corta que sale impresa"
+                    value={form.nombre_etiqueta}
+                    onChange={(e) => setForm({ ...form, nombre_etiqueta: e.target.value })}
+                    className={input}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Si lo dejás vacío, la etiqueta usa el nombre completo. Ideal ≤ {LIMITE_ETIQUETA} caracteres.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
