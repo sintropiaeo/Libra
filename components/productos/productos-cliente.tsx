@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Plus, Search, AlertTriangle, X, Package, Upload,
-  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star, Trash2, Tag,
+  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Star, Trash2, Tag, DollarSign,
 } from 'lucide-react'
 import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -20,6 +20,7 @@ import { redondearPrecio } from '@/lib/utils'
 import { LIMITE_ETIQUETA } from '@/lib/etiquetas'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import ImportarModal from '@/components/productos/importar-modal'
+import ActualizarPreciosModal from '@/components/productos/actualizar-precios-modal'
 import PresentacionesModal from '@/components/productos/presentaciones-modal'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ export default function ProductosCliente({
 
   // Modal importar
   const [modalImportar, setModalImportar] = useState(false)
+  const [modalPrecios, setModalPrecios]   = useState(false)
 
   // Sub-modal de presentaciones (solo admin)
   const [presentacionesDe, setPresentacionesDe] = useState<Producto | null>(null)
@@ -405,6 +407,15 @@ export default function ProductosCliente({
             >
               <Upload className="w-4 h-4" />
               Importar
+            </button>
+          )}
+          {puedeEditar && (
+            <button
+              onClick={() => setModalPrecios(true)}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors border border-slate-200"
+            >
+              <DollarSign className="w-4 h-4" />
+              Actualizar precios
             </button>
           )}
           {puedeEditar && (
@@ -949,6 +960,16 @@ export default function ProductosCliente({
           onClose={() => setModalImportar(false)}
           onSuccess={() => {
             setModalImportar(false)
+            startTransition(() => router.refresh())
+          }}
+        />
+      )}
+
+      {modalPrecios && (
+        <ActualizarPreciosModal
+          onClose={() => setModalPrecios(false)}
+          onSuccess={() => {
+            setModalPrecios(false)
             startTransition(() => router.refresh())
           }}
         />
