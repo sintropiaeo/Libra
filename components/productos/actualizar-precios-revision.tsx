@@ -18,6 +18,10 @@ const LABEL_CAMPO: Record<CampoMatch, string> = {
   nombre:         'Nombre',
 }
 
+// Tope de filas renderizadas por sección (se procesan todas igual; esto es solo
+// para que el navegador no se cuelgue con listas de decenas de miles).
+const MAX_VISIBLE = 200
+
 // Muestra anterior → nuevo, o "sin cambio" si no se actualiza ese precio.
 function CeldaPrecio({ anterior, nuevo }: { anterior: number | null; nuevo: number | null }) {
   if (anterior == null) return <span className="text-slate-400">—</span>
@@ -46,6 +50,7 @@ export default function ActualizarPreciosRevision({
   const { actualizados, parciales, sinMatch } = analisis
   const [checked,   setChecked]   = useState<Set<string>>(new Set())
   const [aplicando, setAplicando] = useState(false)
+  const [progreso,  setProgreso]  = useState(0)
   const [error,     setError]     = useState<string | null>(null)
 
   const parcialesChecked = parciales.filter((m) => m.producto && checked.has(m.producto.id))
@@ -70,14 +75,27 @@ export default function ActualizarPreciosRevision({
   async function confirmar() {
     setError(null)
     setAplicando(true)
+    setProgreso(0)
     const cambios: CambioPrecio[] = [
       ...actualizados.filter((m) => m.producto).map(cambioDe),
       ...parcialesChecked.map(cambioDe),
     ]
-    const r = await aplicarActualizacionPrecios(cambios)
+
+    // Aplicar en tandas para no exceder el timeout del serverless con listas
+    // grandes. Cada llamada es corta y acumulamos el resumen.
+    const BATCH = 500
+    const acc = { actualizados: 0, sinCambios: 0, noEncontrados: 0, errores: [] as { producto_id: string; error: string }[] }
+    for (let i = 0; i < cambios.length; i += BATCH) {
+      const r = await aplicarActualizacionPrecios(cambios.slice(i, i + BATCH))
+      if ('error' in r) { setError(r.error); setAplicando(false); return }
+      acc.actualizados   += r.actualizados
+      acc.sinCambios     += r.sinCambios
+      acc.noEncontrados  += r.noEncontrados
+      acc.errores.push(...r.errores)
+      setProgreso(Math.round(Math.min(i + BATCH, cambios.length) / cambios.length * 100))
+    }
     setAplicando(false)
-    if ('error' in r) { setError(r.error); return }
-    onAplicado(r)
+    onAplicado(acc)
   }
 
   return (
@@ -107,7 +125,7 @@ export default function ActualizarPreciosRevision({
           </h3>
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
-              {actualizados.map((m, idx) => (
+              {actualizados.slice(0, MAX_VISIBLE).map((m, idx) => (
                 <div key={m.producto?.id ?? idx} className="px-4 py-2.5 text-sm">
                   <p className="font-medium text-slate-800 truncate">{m.producto?.nombre}</p>
                   <div className="flex flex-wrap gap-x-6 gap-y-0.5 text-xs mt-1">
@@ -116,6 +134,9 @@ export default function ActualizarPreciosRevision({
                   </div>
                 </div>
               ))}
+              {actualizados.length > MAX_VISIBLE && (
+                <p className="px-4 py-2 text-xs text-slate-400">… y {actualizados.length - MAX_VISIBLE} más (se actualizan todos igual)</p>
+              )}
             </div>
           </div>
         </section>
@@ -133,7 +154,7 @@ export default function ActualizarPreciosRevision({
           </p>
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
-              {parciales.map((m, idx) => {
+              {parciales.slice(0, MAX_VISIBLE).map((m, idx) => {
                 const id = m.producto?.id ?? String(idx)
                 const isChecked = m.producto ? checked.has(m.producto.id) : false
                 return (
@@ -172,6 +193,9 @@ export default function ActualizarPreciosRevision({
                   </label>
                 )
               })}
+              {parciales.length > MAX_VISIBLE && (
+                <p className="px-4 py-2 text-xs text-slate-400">… y {parciales.length - MAX_VISIBLE} más no mostrados (no se pueden marcar, así que no se actualizan)</p>
+              )}
             </div>
           </div>
         </section>
@@ -189,7 +213,7 @@ export default function ActualizarPreciosRevision({
           </p>
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="max-h-48 overflow-y-auto divide-y divide-slate-100">
-              {sinMatch.map((m, idx) => (
+              {sinMatch.slice(0, MAX_VISIBLE).map((m, idx) => (
                 <div key={idx} className="px-4 py-2 text-sm">
                   <p className="text-slate-700 truncate">{m.fila.nombre || <span className="italic text-slate-400">(sin nombre)</span>}</p>
                   <p className="text-xs text-slate-400">
@@ -197,6 +221,9 @@ export default function ActualizarPreciosRevision({
                   </p>
                 </div>
               ))}
+              {sinMatch.length > MAX_VISIBLE && (
+                <p className="px-4 py-2 text-xs text-slate-400">… y {sinMatch.length - MAX_VISIBLE} más</p>
+              )}
             </div>
           </div>
         </section>
@@ -224,7 +251,7 @@ export default function ActualizarPreciosRevision({
           className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg transition-colors"
         >
           {aplicando && <Loader2 className="w-4 h-4 animate-spin" />}
-          {aplicando ? 'Actualizando...' : `Confirmar y actualizar ${totalAAplicar} precio${totalAAplicar !== 1 ? 's' : ''}`}
+          {aplicando ? `Actualizando… ${progreso}%` : `Confirmar y actualizar ${totalAAplicar} precio${totalAAplicar !== 1 ? 's' : ''}`}
         </button>
       </div>
     </div>

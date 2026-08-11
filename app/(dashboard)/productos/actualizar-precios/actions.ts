@@ -50,6 +50,20 @@ async function traerProductosDelNegocio(
   return { productos }
 }
 
+// Devuelve el catálogo del negocio (scopeado server-side) para hacer el match
+// en el navegador. Evita mandar decenas de miles de filas del Excel al server
+// (límite de 1MB de los server actions).
+export type CatalogoResponse = { error: string } | { productos: ProductoPrecio[] }
+
+export async function traerCatalogoPrecios(): Promise<CatalogoResponse> {
+  const ctx = await verificarEditor()
+  if (!ctx) return { error: 'Sin permisos.' }
+  const { supabase, negocioId } = ctx
+  const { productos, error } = await traerProductosDelNegocio(supabase, negocioId)
+  if (error) return { error }
+  return { productos: productos! }
+}
+
 export type AnalisisResponse =
   | { error: string }
   | (ResultadoAnalisis & { totalProductos: number; totalFilas: number })

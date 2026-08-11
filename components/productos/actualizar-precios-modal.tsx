@@ -6,8 +6,8 @@ import {
   X, Upload, FileSpreadsheet, ArrowRight, DollarSign,
   CheckCircle, AlertTriangle, Loader2,
 } from 'lucide-react'
-import { analizarActualizacionPrecios, type AplicarResponse } from '@/app/(dashboard)/productos/actualizar-precios/actions'
-import type { FilaPrecio, ResultadoAnalisis } from '@/lib/precios-match'
+import { traerCatalogoPrecios, type AplicarResponse } from '@/app/(dashboard)/productos/actualizar-precios/actions'
+import { clasificarFilas, type FilaPrecio, type ResultadoAnalisis } from '@/lib/precios-match'
 import ActualizarPreciosRevision from '@/components/productos/actualizar-precios-revision'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -147,14 +147,18 @@ export default function ActualizarPreciosModal({
       return
     }
 
-    const r = await analizarActualizacionPrecios(utiles)
-    if ('error' in r) {
-      setErrorMsg(r.error)
+    // Traemos el catálogo del negocio una sola vez (scopeado server-side) y
+    // hacemos el match en el navegador — así no mandamos las filas del Excel al
+    // server (evita el límite de 1MB con listas grandes).
+    const cat = await traerCatalogoPrecios()
+    if ('error' in cat) {
+      setErrorMsg(cat.error)
       setStep('mapeo')
       return
     }
-    setAnalisis({ actualizados: r.actualizados, parciales: r.parciales, sinMatch: r.sinMatch })
-    setTotalProd(r.totalProductos)
+    const resultado = clasificarFilas(utiles, cat.productos)
+    setAnalisis(resultado)
+    setTotalProd(cat.productos.length)
     setStep('revision')
   }
 
