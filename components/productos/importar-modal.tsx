@@ -81,7 +81,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
   const [onDuplicate, setOnDuplicate] = useState<'actualizar' | 'saltar'>('actualizar')
   const [progreso, setProgreso]       = useState(0)
   const [progresoTexto, setProgresoTexto] = useState('')
-  const [resultado, setResultado]     = useState<{ importados: number; fallidos: number } | null>(null)
+  const [resultado, setResultado]     = useState<{ importados: number; saltados: number; fallidos: number } | null>(null)
   const [filasFallidas, setFilasFallidas] = useState<FilaFallida[]>([])
   const [errorMsg, setErrorMsg]       = useState<string | null>(null)
   const [dragOver, setDragOver]       = useState(false)
@@ -208,8 +208,39 @@ export default function ImportarModal({ onClose, onSuccess }: {
     }
 
     let totalImportados = 0
+    let totalSaltados   = 0
     const fallidos: FilaFallida[] = []
     let procesados = 0
+
+    // Sube un batch; si falla, reintenta fila por fila para que una sola fila
+    // conflictiva no tire todo el lote. Los choques de UNIQUE (23505 = ya existe
+    // ese código de barras o interno) se cuentan como "saltados", no como error.
+    const subir = async (
+      rows: Record<string, unknown>[],
+      filas: ProductoImport[],
+      modo: 'upsert' | 'insert'
+    ) => {
+      const run = (payload: Record<string, unknown>[]) =>
+        modo === 'upsert'
+          ? supabase.from('productos').upsert(payload, { onConflict: 'negocio_id,codigo_barras', ignoreDuplicates: onDuplicate === 'saltar' })
+          : supabase.from('productos').insert(payload)
+
+      const { error } = await run(rows)
+      if (!error) { totalImportados += rows.length; return }
+
+      // Reintento fila por fila, en tandas paralelas para no ser lentísimo
+      const CHUNK = 25
+      for (let k = 0; k < rows.length; k += CHUNK) {
+        const slice      = rows.slice(k, k + CHUNK)
+        const filasSlice = filas.slice(k, k + CHUNK)
+        const errs = await Promise.all(slice.map((r) => run([r]).then(({ error: e }) => e)))
+        errs.forEach((e, idx) => {
+          if (!e)                    totalImportados++
+          else if (e.code === '23505') totalSaltados++   // ya existe (barcode o código interno)
+          else                       fallidos.push({ ...filasSlice[idx], _error: e.message })
+        })
+      }
+    }
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
       const batchRaw = productos.slice(i, i + BATCH_SIZE)
@@ -271,29 +302,12 @@ export default function ImportarModal({ onClose, onSuccess }: {
           return { ...row, precio_venta: Math.max(row.precio_venta, precioExistente) }
         })
 
-        const { error } = await supabase
-          .from('productos')
-          .upsert(rowsConBarras, {
-            onConflict:       'negocio_id,codigo_barras',
-            ignoreDuplicates: onDuplicate === 'saltar',
-          })
-        if (error) {
-          console.error(`[Importar] lote ${loteNum} conBarras:`, error.message)
-          conBarras.forEach((p) => fallidos.push({ ...p, _error: error.message }))
-        } else {
-          totalImportados += conBarras.length
-        }
+        await subir(rowsConBarras, conBarras, 'upsert')
       }
 
       // Insert de los que NO tienen código de barras (solo redondeo, no hay precio existente)
       if (sinBarras.length > 0) {
-        const { error } = await supabase.from('productos').insert(sinBarras.map(toRow))
-        if (error) {
-          console.error(`[Importar] lote ${loteNum} sinBarras:`, error.message)
-          sinBarras.forEach((p) => fallidos.push({ ...p, _error: error.message }))
-        } else {
-          totalImportados += sinBarras.length
-        }
+        await subir(sinBarras.map(toRow), sinBarras, 'insert')
       }
 
       procesados += batchRaw.length
@@ -301,7 +315,7 @@ export default function ImportarModal({ onClose, onSuccess }: {
     }
 
     setFilasFallidas(fallidos)
-    setResultado({ importados: totalImportados, fallidos: fallidos.length })
+    setResultado({ importados: totalImportados, saltados: totalSaltados, fallidos: fallidos.length })
     setStep('resultado')
     onSuccess()
   }
@@ -594,10 +608,16 @@ export default function ImportarModal({ onClose, onSuccess }: {
                   {filas.length.toLocaleString('es-AR')} registros procesados
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-4 w-full max-w-xs">
+              <div className="grid grid-cols-3 gap-3 w-full max-w-md">
                 <div className="bg-emerald-50 rounded-xl p-4">
                   <p className="text-3xl font-bold text-emerald-600">{resultado.importados.toLocaleString('es-AR')}</p>
                   <p className="text-xs text-emerald-700 mt-0.5">importados</p>
+                </div>
+                <div className={`rounded-xl p-4 ${resultado.saltados > 0 ? 'bg-amber-50' : 'bg-slate-100'}`}>
+                  <p className={`text-3xl font-bold ${resultado.saltados > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                    {resultado.saltados.toLocaleString('es-AR')}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${resultado.saltados > 0 ? 'text-amber-700' : 'text-slate-500'}`}>ya existían</p>
                 </div>
                 <div className={`rounded-xl p-4 ${resultado.fallidos > 0 ? 'bg-red-50' : 'bg-slate-100'}`}>
                   <p className={`text-3xl font-bold ${resultado.fallidos > 0 ? 'text-red-600' : 'text-slate-400'}`}>
