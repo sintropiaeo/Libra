@@ -56,9 +56,9 @@ export default function CargarCodigosModal({
         const autoMapeo: ColMapping[] = cols.map((col) => {
           const c = col.toLowerCase().replace(/[\s_-]/g, '')
           let destino: CampoDestino = ''
-          if      (c.includes('nombre'))                                                    destino = 'nombre'
-          else if (c.includes('interno') || c === 'sku' || c === 'cod' || c === 'codigo')  destino = 'codigo_interno'
-          else if (c.includes('barras') || c.includes('ean'))                              destino = 'codigo_barras'
+          if      (c.includes('nombre') || c.includes('producto') || c.includes('descrip')) destino = 'nombre'
+          else if (c.includes('barra')  || c.includes('ean'))                               destino = 'codigo_barras'
+          else if (c.includes('interno') || c === 'sku' || c === 'codigo' || c === 'cod')   destino = 'codigo_interno'
           return { origen: col, destino }
         })
         setFilas(json)

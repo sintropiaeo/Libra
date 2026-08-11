@@ -75,11 +75,12 @@ export default function ActualizarPreciosModal({
         const autoMapeo: ColMapping[] = cols.map((col) => {
           const c = col.toLowerCase().replace(/[\s_-]/g, '')
           let destino: CampoDestino = ''
-          if      (c.includes('nombre'))                                   destino = 'nombre'
-          else if (c.includes('costo'))                                    destino = 'precio_costo'
-          else if (c.includes('venta') || c.includes('precio'))           destino = 'precio_venta'
-          else if (c.includes('interno'))                                  destino = 'codigo_interno'
-          else if (c.includes('barras') || c.includes('ean') || c.includes('sku') || c.includes('codigo') || c === 'cod') destino = 'codigo_barras'
+          if      (c.includes('nombre') || c.includes('producto') || c.includes('descrip')) destino = 'nombre'
+          else if (c.includes('barra')  || c.includes('ean'))                               destino = 'codigo_barras'
+          else if (c.includes('interno') || c === 'sku' || c === 'codigo' || c === 'cod')   destino = 'codigo_interno'
+          else if (c.includes('mayorista') || c.includes('costo'))                          destino = 'precio_costo'
+          else if (c.includes('final') || c.includes('venta') || c.includes('precio'))      destino = 'precio_venta'
+          // "Fecha Modificacion" y demás quedan sin mapear
           return { origen: col, destino }
         })
 
