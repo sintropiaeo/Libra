@@ -6,6 +6,9 @@ import { BookOpen, Eye, EyeOff, Zap } from 'lucide-react'
 import { signIn, signInDemo } from './actions'
 import { useState, useTransition } from 'react'
 
+// Mantener en sync con DEMO_HABILITADA en actions.ts
+const DEMO_HABILITADA = false
+
 function SubmitButton() {
   const { pending } = useFormStatus()
   return (
@@ -120,34 +123,36 @@ export default function LoginForm({
             <SubmitButton />
           </form>
 
-          {/* Separador + Botón Demo */}
-          <div className="mt-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 h-px bg-slate-200" />
-              <span className="text-xs text-slate-400 font-medium">o</span>
-              <div className="flex-1 h-px bg-slate-200" />
-            </div>
-
-            {demoError && (
-              <div className="mb-3 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-lg">
-                {demoError}
+          {/* Separador + Botón Demo — desactivado, ver DEMO_HABILITADA */}
+          {DEMO_HABILITADA && (
+            <div className="mt-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px bg-slate-200" />
+                <span className="text-xs text-slate-400 font-medium">o</span>
+                <div className="flex-1 h-px bg-slate-200" />
               </div>
-            )}
 
-            <button
-              type="button"
-              onClick={handleDemo}
-              disabled={demoPending}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border-2 border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 font-semibold text-sm transition-colors"
-            >
-              <Zap className="w-4 h-4" />
-              {demoPending ? 'Entrando...' : 'Probar demo gratis →'}
-            </button>
+              {demoError && (
+                <div className="mb-3 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-lg">
+                  {demoError}
+                </div>
+              )}
 
-            <p className="text-center text-xs text-slate-400 mt-2">
-              Los datos se resetean automáticamente todos los días
-            </p>
-          </div>
+              <button
+                type="button"
+                onClick={handleDemo}
+                disabled={demoPending}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border-2 border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 font-semibold text-sm transition-colors"
+              >
+                <Zap className="w-4 h-4" />
+                {demoPending ? 'Entrando...' : 'Probar demo gratis →'}
+              </button>
+
+              <p className="text-center text-xs text-slate-400 mt-2">
+                Los datos se resetean automáticamente todos los días
+              </p>
+            </div>
+          )}
 
           {/* Link de registro — solo si no hay admin */}
           {mostrarRegistro && (
